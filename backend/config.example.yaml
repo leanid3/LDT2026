@@ -1,0 +1,55 @@
+# Пример конфигурации. Секреты (пароли, ключи) в реальный config.yaml не класть —
+# он в .gitignore, все секреты передаются через ENV (backend-plan.md §2).
+logger:
+  level: debug # debug|info|warn|error
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 10s
+  write_timeout: 10s
+  shutdown_timeout: 5s
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  database: "inspector"
+  max_connections: 25
+  min_connections: 5
+  max_conn_lifetime: 1h
+  max_conn_idle_time: 30m
+
+broker:
+  bootstrap_servers: "localhost:9092"
+  client_id: "inspector-api"
+
+  producer_acks: "-1"
+  producer_idempotence: true
+  producer_compression: "snappy"
+  producer_retries: 3
+
+  consumer_session_timeout_ms: 30000
+  consumer_heartbeat_interval_ms: 10000
+  consumer_max_poll_interval_ms: 1800000 # >= 30 мин, backend-plan.md §6.3
+  consumer_fetch_max_bytes: 52428800
+
+  security_protocol: "PLAINTEXT"
+  sasl_mechanism: ""
+  sasl_username: ""
+  sasl_password: ""
+
+metrics:
+  enabled: true
+  port: 9091
+  path: "/metrics"
+
+minio:
+  endpoint: "localhost:9000"
+  access_key: "minioadmin"
+  secret_key: "minioadmin"
+  bucket: "documents"
+  use_ssl: false
+  region: "us-east-1"
+  timeout: 30s

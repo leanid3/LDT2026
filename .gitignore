@@ -1,0 +1,23 @@
+# Старый каркас-источник (backend-plan.md §2): скопирован в backend/ без .git,
+# сам остаётся вне этого репозитория (свой .git внутри).
+/task-manager-docs/
+
+# Secrets / local config
+backend/config.yaml
+**/.env
+!**/.env.example
+
+# Build artifacts
+backend/bin/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Go
+*.test
+*.out

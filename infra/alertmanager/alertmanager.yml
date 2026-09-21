@@ -1,0 +1,6 @@
+# Заглушка на M0 (backend-plan.md §10: алерты email/Telegram — настраиваются позже).
+route:
+  receiver: default
+
+receivers:
+  - name: default

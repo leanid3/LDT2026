@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS suspicions;
+DROP TABLE IF EXISTS findings;
+DROP TABLE IF EXISTS evidence_fragments;
+DROP TABLE IF EXISTS checks;
+DROP TABLE IF EXISTS evidence_groups;
+DROP TABLE IF EXISTS facts;

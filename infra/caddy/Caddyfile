@@ -1,0 +1,10 @@
+# HTTPS (self-signed локально) — backend-plan.md §10: TLS 1.3 на реверс-прокси перед API.
+:8443 {
+	tls internal
+	reverse_proxy host.docker.internal:8080
+}
+
+# HTTP (для локальной отладки без TLS)
+http://:8080 {
+	reverse_proxy host.docker.internal:8080
+}

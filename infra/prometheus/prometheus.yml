@@ -1,0 +1,18 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # backend работает на хосте (`make run-api`), metrics-порт см. config.example.yaml (по умолчанию 9091).
+  - job_name: inspector-api
+    static_configs:
+      - targets: ["host.docker.internal:9091"]

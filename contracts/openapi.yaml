@@ -1,0 +1,180 @@
+openapi: "3.0.3"
+info:
+  title: Инспектор ИИ API
+  description: >
+    Черновик контракта (веха M0, backend-plan.md). Полное покрытие эндпоинтов раздела 7
+    добавляется по мере вех M1–M5. Контракт — spec-first: любое изменение API начинается здесь,
+    затем `make gen`, затем код (backend/CLAUDE.md, правило 1).
+  version: "0.1.0"
+servers:
+  - url: /api/v1
+
+tags:
+  - name: system
+    description: Служебные эндпоинты (health, readiness)
+  - name: auth
+    description: Аутентификация
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      tags: [system]
+      summary: Liveness-проверка
+      security: []
+      responses:
+        "200":
+          description: Сервис жив
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /readyz:
+    get:
+      operationId: readyz
+      tags: [system]
+      summary: Readiness-проверка (доступность зависимостей)
+      security: []
+      responses:
+        "200":
+          description: Сервис готов принимать трафик
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "503":
+          description: Одна или несколько зависимостей недоступны
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Аутентификация по логину/паролю (backend-plan.md §7, §12)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Access-токен
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          $ref: "#/components/responses/Error"
+
+  /auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [auth]
+      summary: Текущий пользователь
+      responses:
+        "200":
+          description: Пользователь
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: Ошибка
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    # Единый формат ошибки, backend-plan.md §7:
+    # { "error": { "code", "message", "details" }, "request_id" }
+    Error:
+      type: object
+      required: [error, request_id]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: VALIDATION_FAILED
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+        request_id:
+          type: string
+          format: uuid
+
+    LoginRequest:
+      type: object
+      required: [login, password]
+      properties:
+        login:
+          type: string
+        password:
+          type: string
+          format: password
+
+    LoginResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          description: Секунд до истечения (12ч для демо, backend-plan.md §7)
+
+    Role:
+      type: string
+      enum: [inspector, supervisor, admin, ml_engineer]
+
+    User:
+      type: object
+      required: [id, login, full_name, role, is_active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        login:
+          type: string
+        full_name:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        is_active:
+          type: boolean
+
+security:
+  - bearerAuth: []

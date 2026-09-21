@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS upload_status;
+DROP TABLE IF EXISTS registry_entries;
+DROP TABLE IF EXISTS files;
+DROP TABLE IF EXISTS processes;
+DROP TABLE IF EXISTS objects;

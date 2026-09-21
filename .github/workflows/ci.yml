@@ -1,0 +1,61 @@
+name: backend-ci
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "backend/**"
+      - "contracts/**"
+      - "tools/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "contracts/**"
+      - "tools/**"
+      - ".github/workflows/ci.yml"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # backend/go.mod пин Go 1.24 (backend/CLAUDE.md); dev-инструменты (golangci-lint, oapi-codegen)
+      # живут в отдельном модуле tools/ с собственной, более новой версией Go — см. backend/Makefile
+      # и docs/architecture.md#tools-модуль. GOTOOLCHAIN=auto (по умолчанию) сам подтянет её при make lint/gen.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            tools/go.sum
+
+      # confluent-kafka-go линкуется статически со встроенной librdkafka (internal/platform/kafka);
+      # системный librdkafka-dev не нужен, но CGO_ENABLED=1 требует gcc/g++.
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc g++
+
+      - name: go build
+        working-directory: backend
+        run: go build ./...
+        env:
+          CGO_ENABLED: "1"
+
+      - name: go vet
+        working-directory: backend
+        run: go vet ./...
+
+      - name: golangci-lint
+        working-directory: backend
+        run: make lint
+
+      - name: go test
+        working-directory: backend
+        run: go test ./... -short
+        env:
+          CGO_ENABLED: "1"
