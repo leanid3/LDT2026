@@ -28,8 +28,14 @@ services:
     networks: [inspector-net]
 
   # ------------------------------------------------------------------ minio
+  # minio/minio и minio/mc удалены с Docker Hub (MinIO перестал публиковать готовые образы), quay.io/minio
+  # требует авторизации. cgr.dev/chainguard/minio — MinIO, собранный из исходников Chainguard (анонимный pull).
+  # Образ distroless: нет shell/mc, поэтому нет ни healthcheck через `mc ready`, ни контейнера-создателя
+  # бакетов — бакет создаёт сам backend (internal/platform/minio) и Python-воркеры при старте.
+  # user: root — чтобы именованный том был доступен на запись (в образе работает от uid 65532).
   minio:
-    image: minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
+    user: root
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -39,24 +45,6 @@ services:
       - "9001:9001"
     volumes:
       - miniodata:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    networks: [inspector-net]
-
-  minio-createbuckets:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin &&
-      mc mb -p local/documents &&
-      echo 'bucket documents ready'
-      "
     networks: [inspector-net]
 
   # ------------------------------------------------------------------ kafka
@@ -73,6 +61,13 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single-node KRaft: дефолтный replication factor для внутренних топиков — 3, но брокер один.
+      # Без этого __consumer_offsets/__transaction_state не создаются вообще — ни один consumer group
+      # не может закоммитить offset (обнаружено при первом реальном сквозном прогоне с M1: до этого
+      # кластер проверялся только по списку топиков в kafka-ui, ни разу не гонялся настоящий consumer).
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
     ports:
       - "9092:29092"
     volumes:

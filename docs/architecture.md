@@ -10,25 +10,26 @@
 ```mermaid
 flowchart LR
     Inspector["Инспектор /\nадминистратор"] -->|HTTPS| Caddy
-    Caddy -->|"reverse proxy :8080"| API["cmd/api"]
+    Caddy -->|"reverse proxy :8080"| API["cmd/api\n(/api/v1/*)"]
 
     API -->|"WithTx + outbox_events"| PG[(PostgreSQL)]
     API -->|"presigned POST/GET"| Minio[(MinIO)]
+    API -->|INSTREAM| ClamAV[(ClamAV)]
 
     Relay["cmd/relay"] -->|"SELECT ... FOR UPDATE SKIP LOCKED"| PG
     Relay -->|publish| Kafka{{Kafka}}
 
-    Kafka -->|doc.parse.requested| ParseWorker["parse-воркер (Python)"]
-    ParseWorker -->|doc.parse.completed| Kafka
-    Kafka -->|doc.extract.requested| LLMWorker["LLM-воркер (Python)"]
-    LLMWorker -->|doc.extract.completed| Kafka
+    Kafka -->|doc.parse.requested| Workers["workers/ (Python)\nparse + extract\n(или cmd/mockworkers — заглушка)"]
+    Workers -->|doc.parse.completed| Kafka
+    Kafka -->|doc.extract.requested| Workers
+    Workers -->|doc.extract.completed / facts.jsonl → MinIO| Kafka
 
-    Kafka -->|"consume + WithTx"| Engine["cmd/engine"]
+    Kafka -->|"consume + WithTx"| Engine["cmd/engine\n(fan-in/out + движок правил)"]
     Engine --> PG
     Engine -->|outbox| Relay
 
     Kafka -->|rin.sync.requested| RinSync["cmd/rin-sync"]
-    RinSync -->|УКЭП / HTTP| RIN["ИАИС «РиН»"]
+    RinSync -->|HTTP + retry 1/5/15 мин| RinMock["cmd/rin-mock\n(наша заглушка ИАИС «РиН»)"]
 
     Frontend["frontend (React)"] -->|HTTPS| Caddy
 ```
@@ -37,21 +38,31 @@ flowchart LR
 запросы, читает/пишет Postgres и отдаёт быстрый ответ; разбор документов, сравнение параметров и
 доставка во внешние системы происходят в фоновых сервисах, связанных через Kafka.
 
+**Воркеры** — Python-пакет [`workers/`](../workers/README.md): `parse` (PDF/DOCX/XML → layout с bbox) и
+`extract` (layout → факты по Матрице: regex-шаблоны + опциональный LLM). Общаются с оркестратором
+только через Kafka и MinIO по контракту `contracts/events/*.schema.json` + `contracts/facts.schema.json`;
+писать в Kafka напрямую они не могут — как и Go-сервисы, публикуют через `outbox_events` (transactional
+outbox) и дедуплицируют через `consumed_events`. `cmd/mockworkers` — прежняя Go-заглушка тех же
+воркеров, оставлена для тестов и запуска без Python (**запускать одно из двух, не оба**: оба слушают
+одни топики). `cmd/rin-mock` — заглушка ИАИС «РиН» (внешняя система, её у нас нет).
+
 ## Компоненты (`backend/cmd/*`)
 
 Один Docker-образ, один бинарь на команду `cmd/`; конкретный сервис в docker-compose/kubernetes
 выбирается командой запуска (`/app/bin/api`, `/app/bin/engine`, ...) — см. [backend/Dockerfile](../backend/Dockerfile).
 
-| Бинарь | Роль | Веха |
+| Бинарь | Роль | Статус |
 |---|---|---|
-| `cmd/api` | HTTP API: приём файлов, процессы, верификация, админка, `/healthz` `/readyz` `/metrics` | M0 (каркас), домен — M1+ |
-| `cmd/relay` | Единственный писатель в Kafka: забирает `outbox_events` и публикует | M1 |
-| `cmd/engine` | Consumer результатов воркеров, движок проверок по 132 параметрам, контроль таймаутов заданий | M2–M3 |
-| `cmd/rin-sync` | Отправка финализированных протоколов в ИАИС «РиН» с ретраями (1/5/15 мин) | M4 |
-| `cmd/rin-mock` | Заглушка ИАИС «РиН» для демо и тестов ретраев | M4 |
-| `cmd/tools/import-matrix` | Импорт Матрицы параметров (132 строки) из xlsx в `params` | M2 |
-| `cmd/tools/seed-users` | Тестовые пользователи для демо | M2 |
-| `cmd/tools/export-dataset` | Экспорт GOLD-датасета для дообучения модели | M5 |
+| `cmd/api` | HTTP API: auth, объекты, документы, процессы, findings, протокол, `/healthz` `/readyz` `/metrics` | реализовано (до границы M1+M2+M3(частично)+M4(частично), см. ниже) |
+| `cmd/relay` | Единственный писатель в Kafka: забирает `outbox_events` и публикует | реализовано |
+| `cmd/engine` | Consumer результатов воркеров: fan-in/fan-out `parse_jobs`→`extract_jobs`, валидация фактов, движок правил (8 типов, 71 правило из 132 параметров), READY + протокол | реализовано |
+| `workers/` (Python) | parse- и extract-воркеры, см. [workers/README.md](../workers/README.md) | реализовано |
+| `cmd/mockworkers` | Go-заглушка тех же воркеров — для тестов и запуска без Python | реализовано, вспомогательное |
+| `cmd/rin-sync` | Отправка финализированных протоколов в ИАИС «РиН» с ретраями (1/5/15 мин, конфигурируемо) | реализовано |
+| `cmd/rin-mock` | Заглушка ИАИС «РиН» для демо и тестов ретраев (`--fail-every=N`) | реализовано |
+| `cmd/tools/seed-users` | Тестовые пользователи (по одному на роль) | реализовано |
+| `cmd/tools/import-matrix` | Матрица параметров (132 строки) из `docs/source/*.xlsx` → таблица `params` + экспорт `contracts/matrix.json` для воркеров | реализовано (`make seed`) |
+| `cmd/tools/export-dataset` | Экспорт GOLD-датасета для дообучения модели | **не реализовано** (M5) |
 
 ## `internal/platform` — общая инфраструктура
 
@@ -69,6 +80,53 @@ findings). Домен в `internal/<domain>/` появляется начина�
 | `internal/platform/logging` | `slog.Logger`, JSON в stdout, поля `timestamp/level/service/message/...` |
 | `internal/platform/metrics` | `prometheus/client_golang`, namespace `inspector_`, middleware для HTTP-метрик |
 | `internal/platform/health` | `/healthz` (liveness) и `/readyz` (readiness, гоняет `Checker`-и по зависимостям) |
+| `internal/platform/clamav` | Свой TCP-клиент протокола INSTREAM (без внешней зависимости) — антивирусная проверка при confirm |
+| `internal/platform/outbox` | `Insert` (запись события в транзакции) + `Relay` (claim/publish/backoff, см. паттерн ниже) |
+| `internal/platform/idempotency` | `Once(...)` — идемпотентная обработка одного Kafka-сообщения через `consumed_events` |
+| `internal/platform/events` | Consumer-сторона конверта события (`Envelope` + `DecodeData`) — зеркало `outbox.Envelope` |
+| `internal/platform/dbtest` | Тестовый хелпер: testcontainers Postgres/MinIO + применение миграций, используется во всех интеграционных тестах |
+
+## Доменные пакеты (`internal/<domain>`)
+
+Каждый домен — это `model.go` (типы и enum-константы), `repository.go` (SQL через `db.Querier` —
+единый интерфейс, которому удовлетворяют и `*pgxpool.Pool`, и `pgx.Tx`, поэтому один и тот же
+репозиторий работает что вне транзакции, что внутри `WithTx`), `service.go` (бизнес-логика) и,
+если у домена есть HTTP-эндпоинты — `http.go` (реализация части `gen.ServerInterface`).
+
+| Пакет | Отвечает за |
+|---|---|
+| `internal/auth` | bcrypt, JWT (HS256, 12ч), `AttachClaims`/`Require`/`RequireRole` — middleware и контекстные хелперы |
+| `internal/audit` | `Log(ctx, tx, Entry)` — запись в `audit_log` внутри той же транзакции, что бизнес-изменение |
+| `internal/objects` | CRUD объектов строительства |
+| `internal/files` | Upload (presigned POST), Confirm (sha256+ClamAV+magic bytes+pdfcpu), реестр (CSV/JSON/XLSX), выбор актуальной редакции (`SelectCurrent`, чистая функция) |
+| `internal/process` | Машина состояний процесса, сценарий (`ComputeScenario`), запуск (нарезка `parse_jobs`), finalize/unfinalize |
+| `internal/engine` | Fan-in/fan-out `parse_jobs`→`extract_jobs`→READY, приём фактов (`ProcessFacts`), сборка `evidence_groups`/`checks`/`findings` |
+| `internal/engine/rules` | Механизм правил (`numeric_equal`, `threshold_min`, `threshold_max` + fallback `NOT_COMPARABLE`), загрузка `rules/*.yaml` |
+| `internal/mockworkers` | Go-заглушка воркеров — синтетические факты по реальным кодам Матрицы (M-001, M-041) |
+| `internal/matrix` | Чтение Матрицы из xlsx, загрузка в `params`, каталог для `GET /params` |
+| `internal/findings` | Верификация: `Decide` (атомарно finding + audit + переход READY→VERIFYING→COMPLETED) |
+| `internal/protocol` | Сборка протокола (JSON) из findings + метаданных версии |
+| `internal/rin` | Payload для ИАИС «РиН», HTTP-клиент с ретраями, `Signer` (заглушка УКЭП) |
+| `internal/transport/http/api` | **Композиционный корень**: единственное место, которому разрешено импортировать все домены сразу и реализовывать `gen.ServerInterface` целиком |
+
+### Инверсия зависимостей между доменами
+
+Домены не импортируют друг друга напрямую, если это создало бы цикл. Вместо этого домен объявляет
+узкий интерфейс с тем, что ему нужно от соседа, а конкретная реализация подставляется при сборке
+графа зависимостей в `cmd/api/main.go` (`wireServer`). Примеры:
+
+- `process` не импортирует `files`, но объявляет `FileLister` (`ListCurrentAccepted`) — при сборке
+  подставляется адаптер `api.NewFileLister(filesRepo)` (см. `internal/transport/http/api/adapter.go`),
+  конвертирующий `files.File` → `process.CurrentFile`.
+- `process` объявляет `FindingsGate` (`HasPendingCandidates`) — `findings.Service` удовлетворяет ему
+  структурно, без импорта.
+- `files` объявляет `ProcessGate` (`EnsureUploadable`, `UpdateScenario`) — `process.Service` уже имеет
+  методы с точно такой сигнатурой, подставляется напрямую.
+
+`internal/transport/http/api` — единственный пакет, которому позволено знать про все домены сразу
+(он и делает `ListProcessFiles`/`GetProcess`/... — ответы, которые физически требуют данных больше
+чем из одного домена). Если появится циклическая зависимость между двумя доменными пакетами — это
+всегда решается новым узким интерфейсом на стороне потребителя, а не общим импортом.
 
 ## Паттерны
 
@@ -184,6 +242,10 @@ Offset коммитится только после успешного комм�
 - `0005_checks` — `facts`, `evidence_groups`, `checks`, `evidence_fragments`, `findings`, `suspicions`.
 - `0006_protocol` — `protocols`, `rejection_log`, `dispute_log`.
 - `0007_ml` — `dataset_items`, `model_versions`, `ml_retraining_log`.
+- `0008_files_sha256_nullable`, `0009_facts_sha256_nullable` — точечные правки черновика 0002/0005:
+  `sha256` файла известен только после `confirm`, а запись создаётся раньше (на `upload`) — `NOT NULL`
+  в черновике был багом. Правило №2 (`backend/CLAUDE.md`) соблюдено: не редактируем 0002/0005
+  напрямую, добавляем новую миграцию.
 
 ## Событийная архитектура
 
@@ -228,5 +290,58 @@ Offset коммитится только после успешного комм�
 - **Kafka в режиме KRaft** (`apache/kafka`, без ZooKeeper) — меньше движущихся частей на демо-стенде,
   ZooKeeper для одного брокера не даёт выгоды.
 - **Отдельный `tools/`-модуль** — см. раздел выше.
+- **Single-node Kafka требует `OFFSETS_TOPIC_REPLICATION_FACTOR=1`/`TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1`.**
+  Обнаружено при первом реальном сквозном прогоне: дефолтный replication factor внутренних топиков —
+  3, но брокер один, поэтому `__consumer_offsets`/`__transaction_state` вообще не создавались и ни
+  один consumer group не мог закоммитить offset (до этого стенд проверялся только по списку топиков
+  в kafka-ui на M0, ни разу не гонялся настоящий consumer — см. `infra/docker-compose.yml`).
 
 Обе замены осознанные и зафиксированы здесь по требованию ТЗ (задокументировать отступления).
+
+## Границы текущей реализации
+
+Явно не сделано (см. `docs/backend-plan.md §12` и историю вех), чтобы не путать с недоработками:
+
+- **Каталог правил Матрицы — 71 из 132 параметров.** `backend/rules/M-XXX.yaml` выведены из колонки
+  «Логика ИИ-связи» и помечены как черновик для подтверждения экспертом (`TODO(TZ)`). Остальные 61
+  параметра (качественные: «наличие», «состав», «технология», статусы ОСИГ/ГЛОНАСС и т.п.) получают
+  `NOT_COMPARABLE / RULE_NOT_IMPLEMENTED` — прямой fallback из §8.5 п.1, не ошибка. Не реализованы типы
+  правил `set_difference`, `presence`, `tolerance` (нужны элементы и допуски).
+- **Извлечение**: regex-шаблоны покрывают 44 параметра в «явных» формулировках; всё остальное — только
+  через LLM (`LLM_BASE_URL`/`LLM_MODEL`, не проверялся на реальной модели в этой среде — только на
+  тестовом HTTP-сервере) либо остаётся без факта. OCR для сканов подключён, но не проверен на настоящем
+  tesseract (его нет в среде разработки).
+- **Единицы и мета-данные**: факт сравнивается в единицах Матрицы (`params.unit`); конверсия реализована
+  только для длин (мм/см/м). Строки/таблицы с несколькими объектами (`element_key`: помещения, квартиры)
+  воркеры пока не различают — один факт на параметр и стадию.
+- **`quality=LOW_QUALITY` у фактов** движком пока не учитывается (§8.5 п.4 — `NOT_COMPARABLE` при
+  одних только низкокачественных фактах).
+- **`POST /findings/{id}/split`**, suspicions API, админ-эндпоинты Матрицы/нормативов/пользователей,
+  ML dataset export — не в контракте.
+- **Экспорт протокола** — только JSON (`GET /processes/{id}/protocol`); PDF/XML/DOCX через gotenberg — нет.
+- **Инкрементальный пересчёт** (`input_hash`, дозагрузка после READY без полного пересчёта) — не
+  реализован; `input_hash` в `evidence_groups` считается, но не переиспользуется.
+- **УКЭП-подпись** в `cmd/rin-sync` — `rin.Signer` с no-op реализацией, как и предписано §8.9.
+- **Таймауты заданий** (§8.3: тикер раз в 30 с, повтор до 2 раз) — не реализованы: если воркер вообще не
+  ответил (упал, не запущен), процесс остаётся в `PARSING`. Воркеры, которые ответили `FAILED`/`error`,
+  обрабатываются штатно (job → FAILED, процесс идёт дальше).
+
+## Надёжность доставки (Kafka)
+
+- **Go-consumer'ы** (`engine`, `rin-sync`, `mockworkers`): до 3 попыток с линейным backoff, затем
+  сообщение уходит в `<topic>.dlq` (тело как есть + причина/источник в заголовках `dlq_*`), offset
+  коммитится. Если положить в DLQ не удалось — коммита нет и отправка повторяется, а не теряется.
+  До этого ошибка обработчика молча пропускала сообщение (следующий commit «перепрыгивал» его) —
+  найдено живым прогоном, когда устаревшие сообщения в Kafka вызвали ошибки в engine.
+- **Python-воркеры**: та же схема (`WORKER_MAX_ATTEMPTS`), плюс воркер сам публикует «сбойный» результат
+  (`quality=FAILED` / `error`), чтобы процесс не завис. Сообщения, нарушающие контракт, уходят в DLQ
+  сразу, без повторов.
+- **Replay из DLQ** — вручную (`kafka-console-consumer` → повторная публикация); CLI/эндпоинт не сделаны.
+
+## Хранилище файлов: MinIO
+
+`minio/minio` и `minio/mc` **удалены с Docker Hub** (MinIO перестал публиковать готовые образы), а
+`quay.io/minio` требует авторизации. Стенд и тесты используют `cgr.dev/chainguard/minio` — тот же MinIO,
+собранный из исходников Chainguard (анонимный pull). Образ distroless: нет shell и `mc`, поэтому нет
+healthcheck через `mc ready` и контейнера-создателя бакетов — бакет создают сам backend и воркеры при
+старте. Имя образа в двух местах: `infra/docker-compose.yml` и `backend/internal/platform/dbtest/minio.go`.

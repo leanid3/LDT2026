@@ -1,0 +1,30 @@
+{
+  "fact_id": "66666666-6666-4666-8666-666666666666",
+  "process_id": "33333333-3333-4333-8333-333333333333",
+  "file_id": "55555555-5555-4555-8555-555555555555",
+  "file_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "stage": "PD",
+  "param_code": "M-001",
+  "rule_code": null,
+  "element_key": null,
+  "value_raw": "1 250,5",
+  "value_norm": {
+    "kind": "number",
+    "value": 1250.5,
+    "unit_si": "м²"
+  },
+  "unit": "м²",
+  "page": 3,
+  "bbox": [
+    0.12,
+    0.4,
+    0.31,
+    0.44
+  ],
+  "quote": "Площадь застройки — 1 250,5 м²",
+  "confidence": 0.93,
+  "method": "regex",
+  "quality": "OK",
+  "has_change_notice": false,
+  "extractor_version": "extract@1.0"
+}

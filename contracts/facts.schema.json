@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inspector-ai/contracts/facts.schema.json",
+  "title": "ExtractedFact",
+  "description": "Одна строка JSONL факта (docs/backend-plan.md §9.1). Backend отвергает факт, если bbox вне [0;1] или x0>=x1, нет quote, page вне диапазона файла.",
+  "type": "object",
+  "required": [
+    "fact_id",
+    "file_id",
+    "stage",
+    "param_code",
+    "value_raw",
+    "page",
+    "quote",
+    "confidence",
+    "method",
+    "quality",
+    "extractor_version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "fact_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "process_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "file_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "file_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "stage": {
+      "enum": [
+        "PD",
+        "RD",
+        "ID"
+      ]
+    },
+    "param_code": {
+      "type": "string",
+      "pattern": "^M-\\d{3}$",
+      "description": "Код Матрицы M-001…M-132."
+    },
+    "rule_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "element_key": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Для поэлементных параметров (помещение, ось, квартира)."
+    },
+    "value_raw": {
+      "type": "string"
+    },
+    "value_norm": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "number",
+            "ordinal",
+            "string",
+            "set",
+            "bool",
+            "tolerance"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "unit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "page": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bbox": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "minItems": 4,
+      "maxItems": 4,
+      "description": "[x0,y0,x1,y1] нормализованные, x0<x1, y0<y1."
+    },
+    "quote": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "method": {
+      "enum": [
+        "vector_text",
+        "ocr",
+        "llm",
+        "vlm",
+        "regex",
+        "mock"
+      ]
+    },
+    "quality": {
+      "enum": [
+        "OK",
+        "LOW_QUALITY",
+        "ABSTAIN"
+      ]
+    },
+    "has_change_notice": {
+      "type": "boolean"
+    },
+    "extractor_version": {
+      "type": "string"
+    }
+  }
+}

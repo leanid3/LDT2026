@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inspector-ai/contracts/events/doc.extract.completed.schema.json",
+  "title": "doc.extract.completed",
+  "description": "Общий конверт события (docs/backend-plan.md §6.1). В data — только ссылки на MinIO, не содержимое.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "process_id",
+    "object_id",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Не меняется при ретраях; ключ идемпотентности consumer'а."
+    },
+    "event_type": {
+      "const": "doc.extract.completed"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "object_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "process_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "facts_key"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "facts_key": {
+          "type": "string",
+          "description": "JSONL, одна строка = один факт по contracts/facts.schema.json. Пустая строка — фактов нет."
+        },
+        "suspicions_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

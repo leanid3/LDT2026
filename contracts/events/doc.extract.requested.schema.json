@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inspector-ai/contracts/events/doc.extract.requested.schema.json",
+  "title": "doc.extract.requested",
+  "description": "Общий конверт события (docs/backend-plan.md §6.1). В data — только ссылки на MinIO, не содержимое.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "process_id",
+    "object_id",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Не меняется при ретраях; ключ идемпотентности consumer'а."
+    },
+    "event_type": {
+      "const": "doc.extract.requested"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "object_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "process_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "files"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "file_id",
+              "stage"
+            ],
+            "properties": {
+              "file_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "stage": {
+                "oneOf": [
+                  {
+                    "enum": [
+                      "PD",
+                      "RD",
+                      "ID"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "const": ""
+                  }
+                ]
+              },
+              "discipline": {
+                "type": "string"
+              },
+              "layout_keys": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "layout_key всех DONE-заданий файла по порядку страниц."
+              }
+            }
+          }
+        },
+        "params": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^M-\\d{3}$"
+          },
+          "description": "Необязательно: подмножество кодов Матрицы (инкрементальный пересчёт). Нет — все активные."
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

@@ -4,9 +4,335 @@
 package gen
 
 import (
+	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for DocStage.
+const (
+	ID DocStage = "ID"
+	PD DocStage = "PD"
+	RD DocStage = "RD"
+)
+
+// Valid indicates whether the value is a known member of the DocStage enum.
+func (e DocStage) Valid() bool {
+	switch e {
+	case ID:
+		return true
+	case PD:
+		return true
+	case RD:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EvidenceFragmentRole.
+const (
+	Actual   EvidenceFragmentRole = "actual"
+	Expected EvidenceFragmentRole = "expected"
+)
+
+// Valid indicates whether the value is a known member of the EvidenceFragmentRole enum.
+func (e EvidenceFragmentRole) Valid() bool {
+	switch e {
+	case Actual:
+		return true
+	case Expected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FileCheckStatus.
+const (
+	FileCheckStatusACCEPTED          FileCheckStatus = "ACCEPTED"
+	FileCheckStatusREJECTEDCORRUPTED FileCheckStatus = "REJECTED_CORRUPTED"
+	FileCheckStatusREJECTEDFORMAT    FileCheckStatus = "REJECTED_FORMAT"
+	FileCheckStatusREJECTEDSIZE      FileCheckStatus = "REJECTED_SIZE"
+	FileCheckStatusREJECTEDVIRUS     FileCheckStatus = "REJECTED_VIRUS"
+	FileCheckStatusUPLOADED          FileCheckStatus = "UPLOADED"
+	FileCheckStatusUPLOADING         FileCheckStatus = "UPLOADING"
+)
+
+// Valid indicates whether the value is a known member of the FileCheckStatus enum.
+func (e FileCheckStatus) Valid() bool {
+	switch e {
+	case FileCheckStatusACCEPTED:
+		return true
+	case FileCheckStatusREJECTEDCORRUPTED:
+		return true
+	case FileCheckStatusREJECTEDFORMAT:
+		return true
+	case FileCheckStatusREJECTEDSIZE:
+		return true
+	case FileCheckStatusREJECTEDVIRUS:
+		return true
+	case FileCheckStatusUPLOADED:
+		return true
+	case FileCheckStatusUPLOADING:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FindingReviewPriority.
+const (
+	FindingReviewPriorityHIGH   FindingReviewPriority = "HIGH"
+	FindingReviewPriorityLOW    FindingReviewPriority = "LOW"
+	FindingReviewPriorityMEDIUM FindingReviewPriority = "MEDIUM"
+)
+
+// Valid indicates whether the value is a known member of the FindingReviewPriority enum.
+func (e FindingReviewPriority) Valid() bool {
+	switch e {
+	case FindingReviewPriorityHIGH:
+		return true
+	case FindingReviewPriorityLOW:
+		return true
+	case FindingReviewPriorityMEDIUM:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FindingDecisionRequestDecision.
+const (
+	FindingDecisionRequestDecisionCLARIFICATIONREQUIRED FindingDecisionRequestDecision = "CLARIFICATION_REQUIRED"
+	FindingDecisionRequestDecisionCONFIRMEDVIOLATION    FindingDecisionRequestDecision = "CONFIRMED_VIOLATION"
+	FindingDecisionRequestDecisionNEGATIVEVERIFIED      FindingDecisionRequestDecision = "NEGATIVE_VERIFIED"
+)
+
+// Valid indicates whether the value is a known member of the FindingDecisionRequestDecision enum.
+func (e FindingDecisionRequestDecision) Valid() bool {
+	switch e {
+	case FindingDecisionRequestDecisionCLARIFICATIONREQUIRED:
+		return true
+	case FindingDecisionRequestDecisionCONFIRMEDVIOLATION:
+		return true
+	case FindingDecisionRequestDecisionNEGATIVEVERIFIED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FindingStatus.
+const (
+	FindingStatusCANDIDATE             FindingStatus = "CANDIDATE"
+	FindingStatusCLARIFICATIONREQUIRED FindingStatus = "CLARIFICATION_REQUIRED"
+	FindingStatusCONFIRMEDVIOLATION    FindingStatus = "CONFIRMED_VIOLATION"
+	FindingStatusMISSINGEVIDENCE       FindingStatus = "MISSING_EVIDENCE"
+	FindingStatusNEGATIVEVERIFIED      FindingStatus = "NEGATIVE_VERIFIED"
+	FindingStatusNOTAPPLICABLE         FindingStatus = "NOT_APPLICABLE"
+	FindingStatusNOTCOMPARABLE         FindingStatus = "NOT_COMPARABLE"
+	FindingStatusSUSPICION             FindingStatus = "SUSPICION"
+)
+
+// Valid indicates whether the value is a known member of the FindingStatus enum.
+func (e FindingStatus) Valid() bool {
+	switch e {
+	case FindingStatusCANDIDATE:
+		return true
+	case FindingStatusCLARIFICATIONREQUIRED:
+		return true
+	case FindingStatusCONFIRMEDVIOLATION:
+		return true
+	case FindingStatusMISSINGEVIDENCE:
+		return true
+	case FindingStatusNEGATIVEVERIFIED:
+		return true
+	case FindingStatusNOTAPPLICABLE:
+		return true
+	case FindingStatusNOTCOMPARABLE:
+		return true
+	case FindingStatusSUSPICION:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InspectorStatus.
+const (
+	InspectorStatusCLARIFICATIONREQUIRED InspectorStatus = "CLARIFICATION_REQUIRED"
+	InspectorStatusCONFIRMEDVIOLATION    InspectorStatus = "CONFIRMED_VIOLATION"
+	InspectorStatusNEGATIVEVERIFIED      InspectorStatus = "NEGATIVE_VERIFIED"
+	InspectorStatusPENDING               InspectorStatus = "PENDING"
+)
+
+// Valid indicates whether the value is a known member of the InspectorStatus enum.
+func (e InspectorStatus) Valid() bool {
+	switch e {
+	case InspectorStatusCLARIFICATIONREQUIRED:
+		return true
+	case InspectorStatusCONFIRMEDVIOLATION:
+		return true
+	case InspectorStatusNEGATIVEVERIFIED:
+		return true
+	case InspectorStatusPENDING:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LoadWarningSeverity.
+const (
+	LoadWarningSeverityError   LoadWarningSeverity = "error"
+	LoadWarningSeverityInfo    LoadWarningSeverity = "info"
+	LoadWarningSeverityWarning LoadWarningSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the LoadWarningSeverity enum.
+func (e LoadWarningSeverity) Valid() bool {
+	switch e {
+	case LoadWarningSeverityError:
+		return true
+	case LoadWarningSeverityInfo:
+		return true
+	case LoadWarningSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParamDataType.
+const (
+	Number  ParamDataType = "number"
+	Ordinal ParamDataType = "ordinal"
+	String  ParamDataType = "string"
+)
+
+// Valid indicates whether the value is a known member of the ParamDataType enum.
+func (e ParamDataType) Valid() bool {
+	switch e {
+	case Number:
+		return true
+	case Ordinal:
+		return true
+	case String:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ParamReviewPriority.
+const (
+	ParamReviewPriorityHIGH   ParamReviewPriority = "HIGH"
+	ParamReviewPriorityLOW    ParamReviewPriority = "LOW"
+	ParamReviewPriorityMEDIUM ParamReviewPriority = "MEDIUM"
+)
+
+// Valid indicates whether the value is a known member of the ParamReviewPriority enum.
+func (e ParamReviewPriority) Valid() bool {
+	switch e {
+	case ParamReviewPriorityHIGH:
+		return true
+	case ParamReviewPriorityLOW:
+		return true
+	case ParamReviewPriorityMEDIUM:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProcessStatus.
+const (
+	ProcessStatusCOMPLETED ProcessStatus = "COMPLETED"
+	ProcessStatusFINALIZED ProcessStatus = "FINALIZED"
+	ProcessStatusPARSING   ProcessStatus = "PARSING"
+	ProcessStatusPENDING   ProcessStatus = "PENDING"
+	ProcessStatusREADY     ProcessStatus = "READY"
+	ProcessStatusVERIFYING ProcessStatus = "VERIFYING"
+)
+
+// Valid indicates whether the value is a known member of the ProcessStatus enum.
+func (e ProcessStatus) Valid() bool {
+	switch e {
+	case ProcessStatusCOMPLETED:
+		return true
+	case ProcessStatusFINALIZED:
+		return true
+	case ProcessStatusPARSING:
+		return true
+	case ProcessStatusPENDING:
+		return true
+	case ProcessStatusREADY:
+		return true
+	case ProcessStatusVERIFYING:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProtocolResponseStatus.
+const (
+	DRAFT                 ProtocolResponseStatus = "DRAFT"
+	PROTOCOLFINALIZED     ProtocolResponseStatus = "PROTOCOL_FINALIZED"
+	VERIFICATIONCOMPLETED ProtocolResponseStatus = "VERIFICATION_COMPLETED"
+)
+
+// Valid indicates whether the value is a known member of the ProtocolResponseStatus enum.
+func (e ProtocolResponseStatus) Valid() bool {
+	switch e {
+	case DRAFT:
+		return true
+	case PROTOCOLFINALIZED:
+		return true
+	case VERIFICATIONCOMPLETED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReasonCode.
+const (
+	ReasonCodeAPPROVEDCHANGE ReasonCode = "APPROVED_CHANGE"
+	ReasonCodeDUPLICATE      ReasonCode = "DUPLICATE"
+	ReasonCodeLINKINGERROR   ReasonCode = "LINKING_ERROR"
+	ReasonCodeNOTAPPLICABLE  ReasonCode = "NOT_APPLICABLE"
+	ReasonCodeOCRERROR       ReasonCode = "OCR_ERROR"
+	ReasonCodeOTHER          ReasonCode = "OTHER"
+	ReasonCodeWRONGREVISION  ReasonCode = "WRONG_REVISION"
+)
+
+// Valid indicates whether the value is a known member of the ReasonCode enum.
+func (e ReasonCode) Valid() bool {
+	switch e {
+	case ReasonCodeAPPROVEDCHANGE:
+		return true
+	case ReasonCodeDUPLICATE:
+		return true
+	case ReasonCodeLINKINGERROR:
+		return true
+	case ReasonCodeNOTAPPLICABLE:
+		return true
+	case ReasonCodeOCRERROR:
+		return true
+	case ReasonCodeOTHER:
+		return true
+	case ReasonCodeWRONGREVISION:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for Role.
 const (
@@ -32,6 +358,166 @@ func (e Role) Valid() bool {
 	}
 }
 
+// Defines values for Scenario.
+const (
+	FULL            Scenario = "FULL"
+	PARTIALLYLOADED Scenario = "PARTIALLY_LOADED"
+	PDIDONLY        Scenario = "PD_ID_ONLY"
+	PDRDONLY        Scenario = "PD_RD_ONLY"
+	RDIDONLY        Scenario = "RD_ID_ONLY"
+	SINGLEONLY      Scenario = "SINGLE_ONLY"
+)
+
+// Valid indicates whether the value is a known member of the Scenario enum.
+func (e Scenario) Valid() bool {
+	switch e {
+	case FULL:
+		return true
+	case PARTIALLYLOADED:
+		return true
+	case PDIDONLY:
+		return true
+	case PDRDONLY:
+		return true
+	case RDIDONLY:
+		return true
+	case SINGLEONLY:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SyncStatus.
+const (
+	NOTREQUIRED SyncStatus = "NOT_REQUIRED"
+	PENDINGSYNC SyncStatus = "PENDING_SYNC"
+	SYNCED      SyncStatus = "SYNCED"
+	SYNCFAILED  SyncStatus = "SYNC_FAILED"
+)
+
+// Valid indicates whether the value is a known member of the SyncStatus enum.
+func (e SyncStatus) Valid() bool {
+	switch e {
+	case NOTREQUIRED:
+		return true
+	case PENDINGSYNC:
+		return true
+	case SYNCED:
+		return true
+	case SYNCFAILED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UploadStageStatus.
+const (
+	UploadStageStatusMISSING  UploadStageStatus = "MISSING"
+	UploadStageStatusPARTIAL  UploadStageStatus = "PARTIAL"
+	UploadStageStatusUPLOADED UploadStageStatus = "UPLOADED"
+)
+
+// Valid indicates whether the value is a known member of the UploadStageStatus enum.
+func (e UploadStageStatus) Valid() bool {
+	switch e {
+	case UploadStageStatusMISSING:
+		return true
+	case UploadStageStatusPARTIAL:
+		return true
+	case UploadStageStatusUPLOADED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RegistryTemplateFormat.
+const (
+	RegistryTemplateFormatCsv  RegistryTemplateFormat = "csv"
+	RegistryTemplateFormatXlsx RegistryTemplateFormat = "xlsx"
+)
+
+// Valid indicates whether the value is a known member of the RegistryTemplateFormat enum.
+func (e RegistryTemplateFormat) Valid() bool {
+	switch e {
+	case RegistryTemplateFormatCsv:
+		return true
+	case RegistryTemplateFormatXlsx:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetRegistryTemplateParamsFormat.
+const (
+	GetRegistryTemplateParamsFormatCsv  GetRegistryTemplateParamsFormat = "csv"
+	GetRegistryTemplateParamsFormatXlsx GetRegistryTemplateParamsFormat = "xlsx"
+)
+
+// Valid indicates whether the value is a known member of the GetRegistryTemplateParamsFormat enum.
+func (e GetRegistryTemplateParamsFormat) Valid() bool {
+	switch e {
+	case GetRegistryTemplateParamsFormatCsv:
+		return true
+	case GetRegistryTemplateParamsFormatXlsx:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetProcessRegistryTemplateParamsFormat.
+const (
+	GetProcessRegistryTemplateParamsFormatCsv  GetProcessRegistryTemplateParamsFormat = "csv"
+	GetProcessRegistryTemplateParamsFormatXlsx GetProcessRegistryTemplateParamsFormat = "xlsx"
+)
+
+// Valid indicates whether the value is a known member of the GetProcessRegistryTemplateParamsFormat enum.
+func (e GetProcessRegistryTemplateParamsFormat) Valid() bool {
+	switch e {
+	case GetProcessRegistryTemplateParamsFormatCsv:
+		return true
+	case GetProcessRegistryTemplateParamsFormatXlsx:
+		return true
+	default:
+		return false
+	}
+}
+
+// ConfirmResponse defines model for ConfirmResponse.
+type ConfirmResponse struct {
+	Files []ConfirmedFile `json:"files"`
+}
+
+// ConfirmedFile defines model for ConfirmedFile.
+type ConfirmedFile struct {
+	CheckError  *string            `json:"check_error,omitempty"`
+	CheckStatus FileCheckStatus    `json:"check_status"`
+	FileId      openapi_types.UUID `json:"file_id"`
+	PageCount   *int               `json:"page_count,omitempty"`
+}
+
+// DocStage defines model for DocStage.
+type DocStage string
+
+// DocumentsUploadRequest defines model for DocumentsUploadRequest.
+type DocumentsUploadRequest struct {
+	Files    []UploadFileRequest `json:"files"`
+	ObjectId openapi_types.UUID  `json:"object_id"`
+
+	// ProcessId Указать для дозагрузки в существующий процесс; иначе создаётся новый
+	ProcessId *openapi_types.UUID `json:"process_id,omitempty"`
+}
+
+// DocumentsUploadResponse defines model for DocumentsUploadResponse.
+type DocumentsUploadResponse struct {
+	Files     []PresignedUpload  `json:"files"`
+	ProcessId openapi_types.UUID `json:"process_id"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
@@ -42,6 +528,128 @@ type Error struct {
 	} `json:"error"`
 	RequestId openapi_types.UUID `json:"request_id"`
 }
+
+// EvidenceFragment defines model for EvidenceFragment.
+type EvidenceFragment struct {
+	// Bbox [x0, y0, x1, y1], нормализовано в [0;1], начало координат — левый верхний угол страницы. [0,0,1,1] — положение на странице неизвестно (DOCX/XML). Отсутствует, если геометрии нет.
+	Bbox           *[]float32         `json:"bbox,omitempty"`
+	ExtractedValue *string            `json:"extracted_value,omitempty"`
+	FileId         openapi_types.UUID `json:"file_id"`
+	OriginalName   *string            `json:"original_name,omitempty"`
+	Page           *int               `json:"page,omitempty"`
+
+	// Quote Дословная цитата из документа
+	Quote *string              `json:"quote,omitempty"`
+	Role  EvidenceFragmentRole `json:"role"`
+	Stage *DocStage            `json:"stage,omitempty"`
+}
+
+// EvidenceFragmentRole defines model for EvidenceFragment.Role.
+type EvidenceFragmentRole string
+
+// FileCheckStatus defines model for FileCheckStatus.
+type FileCheckStatus string
+
+// FileDownloadUrl defines model for FileDownloadUrl.
+type FileDownloadUrl struct {
+	ExpiresAt time.Time `json:"expires_at"`
+	Url       string    `json:"url"`
+}
+
+// FileInfo defines model for FileInfo.
+type FileInfo struct {
+	ApprovalStatus  *string            `json:"approval_status,omitempty"`
+	CheckStatus     FileCheckStatus    `json:"check_status"`
+	Discipline      *string            `json:"discipline,omitempty"`
+	DocStage        *DocStage          `json:"doc_stage,omitempty"`
+	DocumentCode    *string            `json:"document_code,omitempty"`
+	Id              openapi_types.UUID `json:"id"`
+	IsCurrent       bool               `json:"is_current"`
+	OriginalName    string             `json:"original_name"`
+	Revision        *string            `json:"revision,omitempty"`
+	SelectionReason *string            `json:"selection_reason,omitempty"`
+	SelectionStatus *string            `json:"selection_status,omitempty"`
+	UploadedAt      time.Time          `json:"uploaded_at"`
+}
+
+// Finding defines model for Finding.
+type Finding struct {
+	// ActualValue Фактическое значение (РД/ИД)
+	ActualValue *string             `json:"actual_value,omitempty"`
+	CheckId     openapi_types.UUID  `json:"check_id"`
+	Comment     *string             `json:"comment,omitempty"`
+	DecidedAt   *time.Time          `json:"decided_at,omitempty"`
+	DecidedBy   *openapi_types.UUID `json:"decided_by,omitempty"`
+	Delta       *string             `json:"delta,omitempty"`
+
+	// Evidence Доказательства обеих сторон (страница, цитата, bbox) — что подсветить в просмотрщике
+	Evidence *[]EvidenceFragment `json:"evidence,omitempty"`
+
+	// ExpectedValue Ожидаемое значение (эталон — обычно ПД)
+	ExpectedValue   *string            `json:"expected_value,omitempty"`
+	FindingStatus   FindingStatus      `json:"finding_status"`
+	Id              openapi_types.UUID `json:"id"`
+	InspectorStatus InspectorStatus    `json:"inspector_status"`
+
+	// ParamCode Код параметра Матрицы
+	//
+	// Example: M-055
+	ParamCode *string `json:"param_code,omitempty"`
+
+	// ParameterName Example: Класс прочности бетона монолитных конструкций
+	ParameterName   *string             `json:"parameter_name,omitempty"`
+	ParentFindingId *openapi_types.UUID `json:"parent_finding_id,omitempty"`
+
+	// Rationale Почему движок принял такое решение — человекочитаемо, для карточки
+	Rationale      *string                `json:"rationale,omitempty"`
+	ReasonCode     *ReasonCode            `json:"reason_code,omitempty"`
+	ReviewPriority *FindingReviewPriority `json:"review_priority,omitempty"`
+
+	// Unit Единица измерения из Матрицы; expected_value/actual_value приведены к ней
+	Unit    *string `json:"unit,omitempty"`
+	Version int     `json:"version"`
+}
+
+// FindingReviewPriority defines model for Finding.ReviewPriority.
+type FindingReviewPriority string
+
+// FindingDecisionRequest defines model for FindingDecisionRequest.
+type FindingDecisionRequest struct {
+	Comment    *string                        `json:"comment,omitempty"`
+	Decision   FindingDecisionRequestDecision `json:"decision"`
+	ReasonCode *ReasonCode                    `json:"reason_code,omitempty"`
+}
+
+// FindingDecisionRequestDecision defines model for FindingDecisionRequest.Decision.
+type FindingDecisionRequestDecision string
+
+// FindingStatus defines model for FindingStatus.
+type FindingStatus string
+
+// InspectorStatus defines model for InspectorStatus.
+type InspectorStatus string
+
+// LoadWarning defines model for LoadWarning.
+type LoadWarning struct {
+	// Code Стабильный код для логики интерфейса: NO_ACCEPTED_FILES, STAGE_UNKNOWN, STAGE_MISSING, STAGE_PARTIAL, EDITION_UNRESOLVED, FILES_REJECTED, SINGLE_STAGE, PARTIALLY_LOADED
+	//
+	//
+	// Example: STAGE_MISSING
+	Code string `json:"code"`
+
+	// Count Сколько файлов затронуто, если применимо
+	Count *int `json:"count,omitempty"`
+
+	// Message Готовый текст для пользователя
+	Message string `json:"message"`
+
+	// Severity info — пояснение; warning — результат будет неполным; error — проверка невозможна без исправления
+	Severity LoadWarningSeverity `json:"severity"`
+	Stage    *DocStage           `json:"stage,omitempty"`
+}
+
+// LoadWarningSeverity info — пояснение; warning — результат будет неполным; error — проверка невозможна без исправления
+type LoadWarningSeverity string
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -60,13 +668,191 @@ type LoginResponse struct {
 	TokenType string `json:"token_type"`
 }
 
+// Object defines model for Object.
+type Object struct {
+	Address      *string            `json:"address,omitempty"`
+	Contractor   *string            `json:"contractor,omitempty"`
+	CreatedAt    time.Time          `json:"created_at"`
+	Customer     *string            `json:"customer,omitempty"`
+	ExternalId   *string            `json:"external_id,omitempty"`
+	Id           openapi_types.UUID `json:"id"`
+	Name         string             `json:"name"`
+	PermitNumber *string            `json:"permit_number,omitempty"`
+}
+
+// ObjectCreateRequest defines model for ObjectCreateRequest.
+type ObjectCreateRequest struct {
+	Address      *string `json:"address,omitempty"`
+	Contractor   *string `json:"contractor,omitempty"`
+	Customer     *string `json:"customer,omitempty"`
+	ExternalId   *string `json:"external_id,omitempty"`
+	Name         string  `json:"name"`
+	PermitNumber *string `json:"permit_number,omitempty"`
+}
+
+// ObjectList defines model for ObjectList.
+type ObjectList struct {
+	Items []Object `json:"items"`
+}
+
+// Param defines model for Param.
+type Param struct {
+	// Code Example: M-055
+	Code           string               `json:"code"`
+	DataType       *ParamDataType       `json:"data_type,omitempty"`
+	Name           string               `json:"name"`
+	ReviewPriority *ParamReviewPriority `json:"review_priority,omitempty"`
+
+	// Section Example: Раздел 4. КР
+	Section  *string `json:"section,omitempty"`
+	SourceId *string `json:"source_id,omitempty"`
+	SourcePd *string `json:"source_pd,omitempty"`
+	SourceRd *string `json:"source_rd,omitempty"`
+
+	// TriggerLogic Логика ИИ-связи из Матрицы
+	TriggerLogic *string `json:"trigger_logic,omitempty"`
+	Unit         *string `json:"unit,omitempty"`
+}
+
+// ParamDataType defines model for Param.DataType.
+type ParamDataType string
+
+// ParamReviewPriority defines model for Param.ReviewPriority.
+type ParamReviewPriority string
+
+// ParamList defines model for ParamList.
+type ParamList struct {
+	Items         []Param `json:"items"`
+	MatrixVersion string  `json:"matrix_version"`
+}
+
+// PresignedUpload defines model for PresignedUpload.
+type PresignedUpload struct {
+	ExpiresAt    time.Time          `json:"expires_at"`
+	FileId       openapi_types.UUID `json:"file_id"`
+	OriginalName string             `json:"original_name"`
+	UploadFields map[string]string  `json:"upload_fields"`
+	UploadUrl    string             `json:"upload_url"`
+}
+
+// ProcessDetail defines model for ProcessDetail.
+type ProcessDetail struct {
+	CreatedAt   time.Time          `json:"created_at"`
+	FinalizedAt *time.Time         `json:"finalized_at,omitempty"`
+	Id          openapi_types.UUID `json:"id"`
+
+	// LoadWarnings Готовые предупреждения о полноте загрузки для показа пользователю (частичные сценарии, отклонённые файлы, неопределённые редакции)
+	LoadWarnings  *[]LoadWarning      `json:"load_warnings,omitempty"`
+	MatrixVersion *string             `json:"matrix_version,omitempty"`
+	ObjectId      openapi_types.UUID  `json:"object_id"`
+	Scenario      *Scenario           `json:"scenario,omitempty"`
+	Status        ProcessStatus       `json:"status"`
+	UpdatedAt     time.Time           `json:"updated_at"`
+	UploadStatus  []UploadStatusEntry `json:"upload_status"`
+}
+
+// ProcessFilesResponse defines model for ProcessFilesResponse.
+type ProcessFilesResponse struct {
+	Items []FileInfo `json:"items"`
+}
+
+// ProcessList defines model for ProcessList.
+type ProcessList struct {
+	Items []ProcessSummary `json:"items"`
+}
+
+// ProcessStatus defines model for ProcessStatus.
+type ProcessStatus string
+
+// ProcessSummary defines model for ProcessSummary.
+type ProcessSummary struct {
+	CreatedAt   time.Time          `json:"created_at"`
+	FinalizedAt *time.Time         `json:"finalized_at,omitempty"`
+	Id          openapi_types.UUID `json:"id"`
+	ObjectId    openapi_types.UUID `json:"object_id"`
+	Scenario    *Scenario          `json:"scenario,omitempty"`
+	Status      ProcessStatus      `json:"status"`
+	UpdatedAt   time.Time          `json:"updated_at"`
+}
+
+// ProtocolResponse defines model for ProtocolResponse.
+type ProtocolResponse struct {
+	CreatedAt      *time.Time `json:"created_at,omitempty"`
+	DatasetVersion *string    `json:"dataset_version,omitempty"`
+	FinalizedAt    *time.Time `json:"finalized_at,omitempty"`
+	Findings       []Finding  `json:"findings"`
+
+	// LoadWarnings Предупреждения о полноте загрузки (раздел «Тип проверки»)
+	LoadWarnings  *[]LoadWarning         `json:"load_warnings,omitempty"`
+	MatrixVersion *string                `json:"matrix_version,omitempty"`
+	ModelVersion  *string                `json:"model_version,omitempty"`
+	ProcessId     openapi_types.UUID     `json:"process_id"`
+	Scenario      *Scenario              `json:"scenario,omitempty"`
+	Status        ProtocolResponseStatus `json:"status"`
+
+	// UploadStatus Раздел протокола «Статус загрузки документов» (ТЗ)
+	UploadStatus *[]UploadStatusEntry `json:"upload_status,omitempty"`
+	Version      int                  `json:"version"`
+}
+
+// ProtocolResponseStatus defines model for ProtocolResponse.Status.
+type ProtocolResponseStatus string
+
+// ReasonCode defines model for ReasonCode.
+type ReasonCode string
+
+// RegistryUploadResponse defines model for RegistryUploadResponse.
+type RegistryUploadResponse struct {
+	// Errors Проблемы, из-за которых строка не применена, — «строка N, поле: причина»
+	Errors *[]string `json:"errors,omitempty"`
+
+	// Invalid Строки, отклонённые из-за недопустимых значений (не применялись); причины — в errors
+	Invalid *int `json:"invalid,omitempty"`
+
+	// Matched Строки, применённые к файлам
+	Matched   int `json:"matched"`
+	TotalRows int `json:"total_rows"`
+
+	// Unmatched Корректные строки, для которых нет загруженного файла (имя должно совпадать точно либо указать sha256)
+	Unmatched int `json:"unmatched"`
+
+	// Warnings Строка применена, но что-то не заполнено (например, нет статуса — файл не сможет быть эталоном)
+	Warnings *[]string `json:"warnings,omitempty"`
+}
+
 // Role defines model for Role.
 type Role string
 
-// StatusResponse defines model for StatusResponse.
-type StatusResponse struct {
-	// Status Example: ok
-	Status string `json:"status"`
+// Scenario defines model for Scenario.
+type Scenario string
+
+// SyncStatus defines model for SyncStatus.
+type SyncStatus string
+
+// SyncStatusResponse defines model for SyncStatusResponse.
+type SyncStatusResponse struct {
+	SyncStatus SyncStatus `json:"sync_status"`
+	UpdatedAt  *time.Time `json:"updated_at,omitempty"`
+}
+
+// UnfinalizeRequest defines model for UnfinalizeRequest.
+type UnfinalizeRequest struct {
+	Reason string `json:"reason"`
+}
+
+// UploadFileRequest defines model for UploadFileRequest.
+type UploadFileRequest struct {
+	OriginalName string `json:"original_name"`
+	SizeBytes    int64  `json:"size_bytes"`
+}
+
+// UploadStageStatus defines model for UploadStageStatus.
+type UploadStageStatus string
+
+// UploadStatusEntry defines model for UploadStatusEntry.
+type UploadStatusEntry struct {
+	Stage  DocStage          `json:"stage"`
+	Status UploadStageStatus `json:"status"`
 }
 
 // User defines model for User.
@@ -78,8 +864,55 @@ type User struct {
 	Role     Role               `json:"role"`
 }
 
+// IdParam defines model for IdParam.
+type IdParam = openapi_types.UUID
+
+// ProcessIdParam defines model for ProcessIdParam.
+type ProcessIdParam = openapi_types.UUID
+
+// RegistryTemplateFormat defines model for RegistryTemplateFormat.
+type RegistryTemplateFormat string
+
+// GetRegistryTemplateParams defines parameters for GetRegistryTemplate.
+type GetRegistryTemplateParams struct {
+	// Format Формат шаблона; по умолчанию xlsx (в нём есть лист с инструкцией и выпадающие списки)
+	Format *GetRegistryTemplateParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetRegistryTemplateParamsFormat defines parameters for GetRegistryTemplate.
+type GetRegistryTemplateParamsFormat string
+
+// UploadRegistryMultipartBody defines parameters for UploadRegistry.
+type UploadRegistryMultipartBody struct {
+	File openapi_types.File `json:"file"`
+}
+
+// GetProcessRegistryTemplateParams defines parameters for GetProcessRegistryTemplate.
+type GetProcessRegistryTemplateParams struct {
+	// Format Формат шаблона; по умолчанию xlsx (в нём есть лист с инструкцией и выпадающие списки)
+	Format *GetProcessRegistryTemplateParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+}
+
+// GetProcessRegistryTemplateParamsFormat defines parameters for GetProcessRegistryTemplate.
+type GetProcessRegistryTemplateParamsFormat string
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// UploadDocumentsJSONRequestBody defines body for UploadDocuments for application/json ContentType.
+type UploadDocumentsJSONRequestBody = DocumentsUploadRequest
+
+// UploadRegistryMultipartRequestBody defines body for UploadRegistry for multipart/form-data ContentType.
+type UploadRegistryMultipartRequestBody UploadRegistryMultipartBody
+
+// DecideFindingJSONRequestBody defines body for DecideFinding for application/json ContentType.
+type DecideFindingJSONRequestBody = FindingDecisionRequest
+
+// CreateObjectJSONRequestBody defines body for CreateObject for application/json ContentType.
+type CreateObjectJSONRequestBody = ObjectCreateRequest
+
+// UnfinalizeProcessJSONRequestBody defines body for UnfinalizeProcess for application/json ContentType.
+type UnfinalizeProcessJSONRequestBody = UnfinalizeRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -89,12 +922,66 @@ type ServerInterface interface {
 	// GetCurrentUser Текущий пользователь
 	// (GET /auth/me)
 	GetCurrentUser(c *gin.Context)
-	// Healthz Liveness-проверка
-	// (GET /healthz)
-	Healthz(c *gin.Context)
-	// Readyz Readiness-проверка (доступность зависимостей)
-	// (GET /readyz)
-	Readyz(c *gin.Context)
+	// GetRegistryTemplate Пустой шаблон реестра файлов (XLSX с листом «Инструкция» или CSV)
+	// (GET /documents/registry-template)
+	GetRegistryTemplate(c *gin.Context, params GetRegistryTemplateParams)
+	// UploadDocuments Заявить файлы к загрузке (создаёт процесс или дозагружает в существующий), выдаёт presigned POST
+	// (POST /documents/upload)
+	UploadDocuments(c *gin.Context)
+	// ConfirmDocuments Подтвердить загруженные в MinIO файлы (sha256, ClamAV, magic bytes, pdfcpu)
+	// (POST /documents/{process_id}/confirm)
+	ConfirmDocuments(c *gin.Context, processId ProcessIdParam)
+	// UploadRegistry Загрузить реестр файлов (CSV/JSON/XLSX) и пересчитать выбор актуальных редакций
+	// (POST /documents/{process_id}/registry)
+	UploadRegistry(c *gin.Context, processId ProcessIdParam)
+	// GetProcessRegistryTemplate Шаблон реестра, предзаполненный загруженными файлами процесса
+	// (GET /documents/{process_id}/registry-template)
+	GetProcessRegistryTemplate(c *gin.Context, processId ProcessIdParam, params GetProcessRegistryTemplateParams)
+	// GetFileDownloadUrl Временная ссылка на файл — для просмотра рядом ПД/РД с подсветкой bbox из доказательства
+	// (GET /files/{id}/download-url)
+	GetFileDownloadUrl(c *gin.Context, id IdParam)
+	// GetFinding Карточка доказательства
+	// (GET /findings/{id})
+	GetFinding(c *gin.Context, id IdParam)
+	// DecideFinding Подтвердить/отклонить/уточнить finding
+	// (POST /findings/{id}/decision)
+	DecideFinding(c *gin.Context, id IdParam)
+	// ListObjects Список объектов
+	// (GET /objects)
+	ListObjects(c *gin.Context)
+	// CreateObject Создать объект строительства
+	// (POST /objects)
+	CreateObject(c *gin.Context)
+	// GetObject Объект по id
+	// (GET /objects/{id})
+	GetObject(c *gin.Context, id IdParam)
+	// ListObjectProcesses Процессы проверки объекта (новые сверху)
+	// (GET /objects/{id}/processes)
+	ListObjectProcesses(c *gin.Context, id IdParam)
+	// ListParams Каталог параметров Матрицы (M-001…M-132) — подписи, единицы, приоритет для интерфейса
+	// (GET /params)
+	ListParams(c *gin.Context)
+	// GetProcess Статус процесса, сценарий, статусы загрузки по стадиям
+	// (GET /processes/{id})
+	GetProcess(c *gin.Context, id IdParam)
+	// ListProcessFiles Файлы процесса с редакциями и статусами проверки
+	// (GET /processes/{id}/files)
+	ListProcessFiles(c *gin.Context, id IdParam)
+	// FinalizeProcess Финализировать процесс (все CANDIDATE решены)
+	// (POST /processes/{id}/finalize)
+	FinalizeProcess(c *gin.Context, id IdParam)
+	// GetProtocol Протокол проверки (актуальная версия)
+	// (GET /processes/{id}/protocol)
+	GetProtocol(c *gin.Context, id IdParam)
+	// StartProcess Запустить проверку (PENDING → PARSING), нарезать задания парсинга
+	// (POST /processes/{id}/start)
+	StartProcess(c *gin.Context, id IdParam)
+	// GetProcessSync Статус синхронизации с ИАИС «РиН»
+	// (GET /processes/{id}/sync)
+	GetProcessSync(c *gin.Context, id IdParam)
+	// UnfinalizeProcess Отменить финализацию (только supervisor/admin, причина обязательна, в аудит)
+	// (POST /processes/{id}/unfinalize)
+	UnfinalizeProcess(c *gin.Context, id IdParam)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -132,8 +1019,22 @@ func (siw *ServerInterfaceWrapper) GetCurrentUser(c *gin.Context) {
 	siw.Handler.GetCurrentUser(c)
 }
 
-// Healthz operation middleware
-func (siw *ServerInterfaceWrapper) Healthz(c *gin.Context) {
+// GetRegistryTemplate operation middleware
+func (siw *ServerInterfaceWrapper) GetRegistryTemplate(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetRegistryTemplateParams
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", c.Request.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter format: %w", err), http.StatusBadRequest)
+		return
+	}
 
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
@@ -142,11 +1043,11 @@ func (siw *ServerInterfaceWrapper) Healthz(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.Healthz(c)
+	siw.Handler.GetRegistryTemplate(c, params)
 }
 
-// Readyz operation middleware
-func (siw *ServerInterfaceWrapper) Readyz(c *gin.Context) {
+// UploadDocuments operation middleware
+func (siw *ServerInterfaceWrapper) UploadDocuments(c *gin.Context) {
 
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
@@ -155,7 +1056,432 @@ func (siw *ServerInterfaceWrapper) Readyz(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.Readyz(c)
+	siw.Handler.UploadDocuments(c)
+}
+
+// ConfirmDocuments operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmDocuments(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "process_id" -------------
+	var processId ProcessIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", c.Param("process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter process_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ConfirmDocuments(c, processId)
+}
+
+// UploadRegistry operation middleware
+func (siw *ServerInterfaceWrapper) UploadRegistry(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "process_id" -------------
+	var processId ProcessIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", c.Param("process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter process_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UploadRegistry(c, processId)
+}
+
+// GetProcessRegistryTemplate operation middleware
+func (siw *ServerInterfaceWrapper) GetProcessRegistryTemplate(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "process_id" -------------
+	var processId ProcessIdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", c.Param("process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter process_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetProcessRegistryTemplateParams
+
+	// ------------- Optional query parameter "format" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "format", c.Request.URL.Query(), &params.Format, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter format: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetProcessRegistryTemplate(c, processId, params)
+}
+
+// GetFileDownloadUrl operation middleware
+func (siw *ServerInterfaceWrapper) GetFileDownloadUrl(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetFileDownloadUrl(c, id)
+}
+
+// GetFinding operation middleware
+func (siw *ServerInterfaceWrapper) GetFinding(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetFinding(c, id)
+}
+
+// DecideFinding operation middleware
+func (siw *ServerInterfaceWrapper) DecideFinding(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DecideFinding(c, id)
+}
+
+// ListObjects operation middleware
+func (siw *ServerInterfaceWrapper) ListObjects(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListObjects(c)
+}
+
+// CreateObject operation middleware
+func (siw *ServerInterfaceWrapper) CreateObject(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateObject(c)
+}
+
+// GetObject operation middleware
+func (siw *ServerInterfaceWrapper) GetObject(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetObject(c, id)
+}
+
+// ListObjectProcesses operation middleware
+func (siw *ServerInterfaceWrapper) ListObjectProcesses(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListObjectProcesses(c, id)
+}
+
+// ListParams operation middleware
+func (siw *ServerInterfaceWrapper) ListParams(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListParams(c)
+}
+
+// GetProcess operation middleware
+func (siw *ServerInterfaceWrapper) GetProcess(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetProcess(c, id)
+}
+
+// ListProcessFiles operation middleware
+func (siw *ServerInterfaceWrapper) ListProcessFiles(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListProcessFiles(c, id)
+}
+
+// FinalizeProcess operation middleware
+func (siw *ServerInterfaceWrapper) FinalizeProcess(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.FinalizeProcess(c, id)
+}
+
+// GetProtocol operation middleware
+func (siw *ServerInterfaceWrapper) GetProtocol(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetProtocol(c, id)
+}
+
+// StartProcess operation middleware
+func (siw *ServerInterfaceWrapper) StartProcess(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.StartProcess(c, id)
+}
+
+// GetProcessSync operation middleware
+func (siw *ServerInterfaceWrapper) GetProcessSync(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetProcessSync(c, id)
+}
+
+// UnfinalizeProcess operation middleware
+func (siw *ServerInterfaceWrapper) UnfinalizeProcess(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UnfinalizeProcess(c, id)
 }
 
 // GinServerOptions provides options for the Gin server.
@@ -185,8 +1511,26 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
-	router.GET(options.BaseURL+"/healthz", wrapper.Healthz)
-	router.GET(options.BaseURL+"/readyz", wrapper.Readyz)
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
 	router.GET(options.BaseURL+"/auth/me", wrapper.GetCurrentUser)
+	router.GET(options.BaseURL+"/objects", wrapper.ListObjects)
+	router.POST(options.BaseURL+"/objects", wrapper.CreateObject)
+	router.GET(options.BaseURL+"/objects/:id", wrapper.GetObject)
+	router.GET(options.BaseURL+"/objects/:id/processes", wrapper.ListObjectProcesses)
+	router.GET(options.BaseURL+"/params", wrapper.ListParams)
+	router.GET(options.BaseURL+"/files/:id/download-url", wrapper.GetFileDownloadUrl)
+	router.POST(options.BaseURL+"/documents/upload", wrapper.UploadDocuments)
+	router.POST(options.BaseURL+"/documents/:process_id/confirm", wrapper.ConfirmDocuments)
+	router.GET(options.BaseURL+"/documents/registry-template", wrapper.GetRegistryTemplate)
+	router.GET(options.BaseURL+"/documents/:process_id/registry-template", wrapper.GetProcessRegistryTemplate)
+	router.POST(options.BaseURL+"/documents/:process_id/registry", wrapper.UploadRegistry)
+	router.GET(options.BaseURL+"/processes/:id", wrapper.GetProcess)
+	router.GET(options.BaseURL+"/processes/:id/files", wrapper.ListProcessFiles)
+	router.POST(options.BaseURL+"/processes/:id/start", wrapper.StartProcess)
+	router.POST(options.BaseURL+"/processes/:id/finalize", wrapper.FinalizeProcess)
+	router.POST(options.BaseURL+"/processes/:id/unfinalize", wrapper.UnfinalizeProcess)
+	router.GET(options.BaseURL+"/processes/:id/sync", wrapper.GetProcessSync)
+	router.GET(options.BaseURL+"/processes/:id/protocol", wrapper.GetProtocol)
+	router.GET(options.BaseURL+"/findings/:id", wrapper.GetFinding)
+	router.POST(options.BaseURL+"/findings/:id/decision", wrapper.DecideFinding)
 }

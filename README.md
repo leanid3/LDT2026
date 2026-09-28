@@ -8,13 +8,21 @@
 подтверждает или отклоняет кандидаты в нарушения в веб‑интерфейсе → формируется протокол проверки,
 который при финализации уходит в ИАИС «РиН».
 
-> Статус: активная разработка, hackathon-темп (дедлайн 29.09.2026, code freeze 28.09.2026 вечером).
-> Веха **M0 (каркас и стенд) выполнена**, актуальный статус — [docs/backend-plan.md §11](docs/backend-plan.md#11-порядок-задач).
+> Статус: hackathon-темп (дедлайн 29.09.2026, code freeze 28.09.2026 вечером).
+> **Конвейер работает end-to-end на реальных данных**: загрузка PDF/DOCX/XML → подтверждение → реестр и
+> выбор редакции → Python-воркеры (парсинг с координатами, извлечение значений параметров Матрицы) →
+> движок правил (71 правило из 132 параметров) → протокол с доказательствами (страница, цитата, bbox) →
+> верификация инспектором → финализация → синхронизация с ИАИС «РиН» (заглушка `cmd/rin-mock`: внешней
+> системы у нас нет). Прогон одной командой: `python3 scripts/e2e.py`. Что не сделано и почему —
+> [docs/architecture.md#границы-текущей-реализации](docs/architecture.md#границы-текущей-реализации).
+> Для фронтенда: Swagger на `/swagger`, гайд — [docs/frontend-api.md](docs/frontend-api.md).
 
 ## Документация
 
 | Документ | О чём |
 |---|---|
+| [docs/frontend-api.md](docs/frontend-api.md) | **API для фронтенда**: Swagger, экраны → эндпоинты, bbox и просмотрщик |
+| [workers/README.md](workers/README.md) | Python-воркеры: parse и extract, гарантии, запуск |
 | [docs/architecture.md](docs/architecture.md) | Архитектура, компоненты, паттерны, архитектурные решения |
 | [docs/lifecycle.md](docs/lifecycle.md) | Жизненные циклы: процесс проверки, файл, finding, событие, HTTP-запрос, сервис |
 | [docs/development.md](docs/development.md) | Локальная разработка: сборка, запуск, тесты, генерация кода |
@@ -31,13 +39,15 @@
 
 ```
 .
-├── backend/            # Go-бэкенд: cmd/{api,relay,engine,rin-sync,rin-mock,tools/*}, internal/*
+├── backend/            # Go-бэкенд: cmd/{api,relay,engine,rin-sync,rin-mock,mockworkers,tools/*}, internal/*
+│   └── rules/          # Правила движка проверок: M-XXX.yaml (71 параметр) + scales.yaml
 ├── contracts/          # Общие контракты: OpenAPI 3.0, JSON Schema событий Kafka
 ├── infra/              # docker-compose стенд: postgres, kafka, minio, prometheus, grafana, caddy, ...
 ├── tools/              # Отдельный Go-модуль для dev-инструментов (golangci-lint, oapi-codegen)
 ├── docs/               # Документация (этот раздел)
-├── workers/            # Python: парсинг документов и LLM-извлечение фактов (участники 4, 5)
-└── frontend/           # React (участник 3)
+├── workers/            # Python-воркеры: parse (документ → layout) и extract (layout → факты по Матрице)
+├── scripts/            # e2e.py — сквозной сценарий через публичный API + PDF-фикстуры
+└── frontend/           # React (участник 3) — ещё нет; API и гайд готовы
 ```
 
 `backend/` и `tools/` — два независимых Go-модуля; почему так и что это значит на практике —

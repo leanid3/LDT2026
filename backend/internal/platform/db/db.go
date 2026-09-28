@@ -10,8 +10,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// Querier — общий поднабор *pgxpool.Pool и pgx.Tx: доменные репозитории пишут методы через этот
+// интерфейс и работают одинаково что вне транзакции (обычные чтения), что внутри WithTx (шаг
+// unit-of-work вместе с другими изменениями/outbox-записью).
+type Querier interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 type Config struct {
 	Host            string

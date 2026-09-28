@@ -1,150 +1,130 @@
 # Сборка и развёртывание на стенде
 
-Локальный запуск для разработки описан в [development.md](development.md) — там API работает на хосте
-через `go run`, а Docker-контейнер API не используется. Этот документ — про общий (демо-)стенд, где
-`api`/`relay`/`engine`/`rin-sync`/`rin-mock` работают как контейнеры из собранного образа, а не `go run`.
+Локальный запуск для разработки описан в [development.md](development.md) — там сервисы работают на хосте
+через `go run`. Этот документ — про **тестовый стенд**, где всё (backend и Python-воркеры) запускается
+контейнерами из собранных образов.
 
 ## Модель развёртывания
 
-Один Docker-образ (`backend/Dockerfile`) содержит все бинари `cmd/*`; конкретный сервис на стенде —
-это тот же образ, запущенный с разной командой. Инфраструктура (Postgres, Kafka, MinIO, Prometheus,
-...) — та же `infra/docker-compose.yml`, что и локально; отличие стенда — backend-сервисы тоже
-поднимаются в compose (а не на хосте), и конфигурация идёт через ENV, а не `config.yaml`.
+Два образа:
+
+| Образ | Dockerfile | Содержит |
+|---|---|---|
+| `inspector-backend` | `backend/Dockerfile` | все бинари Go: `api`, `relay`, `engine`, `rin-sync`, `rin-mock`, `mockworkers`, `import-matrix`, `seed-users`; `rules/`, `contracts/`, xlsx Матрицы |
+| `inspector-workers` | `workers/Dockerfile` | Python-воркеры `parse` и `extract` (+ tesseract для OCR), `contracts/` |
+
+Конкретный сервис — тот же образ с другой командой. Инфраструктура (Postgres, Kafka, MinIO, ClamAV, ...) —
+`infra/docker-compose.yml`; сервисы приложения — оверлей `infra/docker-compose.stand.yml`.
 
 ```mermaid
 flowchart LR
-    subgraph Стенд
-        Caddy -->|:8080| API[api]
-        API --> PG[(postgres)]
-        API --> Minio[(minio)]
-        Relay[relay] --> PG
-        Relay --> Kafka{{kafka}}
-        Engine[engine] --> Kafka
-        Engine --> PG
-        RinSync[rin-sync] --> Kafka
-        RinSync --> RinMock[rin-mock]
-    end
-    Internet -->|HTTPS| Caddy
+    Browser -->|":8080 / Caddy"| API[api]
+    Browser -->|"presigned :9000"| Minio[(minio)]
+    API --> PG[(postgres)]
+    API --> Minio
+    API --> ClamAV[(clamav)]
+    Relay[relay] --> PG
+    Relay --> Kafka{{kafka}}
+    WP[worker-parse] --> Kafka
+    WE[worker-extract] --> Kafka
+    WP --> Minio
+    WE --> Minio
+    Engine[engine] --> Kafka
+    Engine --> PG
+    RinSync[rin-sync] --> Kafka
+    RinSync --> RinMock[rin-mock]
 ```
 
-## 1. Сборка образа
+## Быстрый старт (тестовый стенд одной командой)
 
 ```bash
-cd backend
-docker build -t ghcr.io/tanoklllmonbku/hakaton-ldt-backend:<tag> .
+cd infra
+cp .env.stand.example .env
+#   AUTH_JWT_SECRET — обязательно (openssl rand -hex 32); STAND_HOST — адрес машины, как его видит браузер
+docker compose -f docker-compose.yml -f docker-compose.stand.yml up -d --build
 ```
 
-`<tag>` — короткий git SHA или версия релиза (например `git rev-parse --short HEAD`). Не используйте
-`latest` на стенде — при обновлении невозможно будет откатиться на конкретную версию.
+Порядок старта compose выстраивает сам: `postgres → migrate → seed → engine/api/relay/воркеры`.
+`migrate` накатывает миграции, `seed` загружает 132 параметра Матрицы и **демо-пользователей** (пароль
+`demo-password-123` — только для тестового стенда, на боевом не запускать `seed-users`).
 
-CI ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) на текущем этапе проверяет `build/vet/lint/test`,
-но не пушит образ — публикация в registry подключается отдельным job'ом, когда появится реальный стенд
-(добавить `docker/build-push-action` + `docker/login-action` с логином в GHCR по `GITHUB_TOKEN`).
+Что публикуется наружу: **API — :8080**, Swagger — `:8080/swagger`, **MinIO — :9000** (браузер грузит и
+скачивает файлы напрямую по presigned-ссылкам), kafka-ui — :8090, Grafana — :3001.
 
-Локально проверить, что собранный образ рабочий, можно без полного стенда:
+### Два адреса MinIO — почему это важно
+
+Backend ходит в MinIO по внутреннему адресу (`minio:9000`), а presigned-ссылки отдаются браузеру и должны
+быть подписаны под адрес, **который браузер видит**: подпись включает Host, подменить его нельзя. Поэтому у
+`api` два параметра: `MINIO_ENDPOINT` (внутренний) и `MINIO_PUBLIC_ENDPOINT` (в оверлее это
+`${STAND_HOST}:9000`). Если `STAND_HOST` не тот, загрузка файлов из браузера не заработает, хотя API отвечает.
+Для HTTPS-домена добавьте `MINIO_PUBLIC_USE_SSL=true`.
+
+### Проверка после выкладки
 
 ```bash
-docker run --rm ghcr.io/tanoklllmonbku/hakaton-ldt-backend:<tag> /app/bin/api --help 2>&1 | head
+curl -sf http://<стенд>:8080/healthz && curl -sf http://<стенд>:8080/readyz
+docker compose -f docker-compose.yml -f docker-compose.stand.yml ps      # seed/migrate — Exited (0), остальные Up
+python3 scripts/e2e.py --api http://<стенд>:8080/api/v1                   # сквозной сценарий: должен закончиться «ИТОГ: OK»
 ```
 
-## 2. Инфраструктура
+Плюс [operations.md#health-checks](operations.md#health-checks): Grafana, kafka-ui (накопление в топиках =
+consumer не тянет), сообщения в `*.dlq`.
 
-На выделенной машине (или VM):
+## Сборка образов отдельно
+
+Контекст сборки — **корень репозитория** (нужны `contracts/` и `docs/source/*.xlsx`):
 
 ```bash
-git clone <repo> && cd Hakaton-LDT/infra
-docker compose up -d postgres minio minio-createbuckets kafka kafka-init kafka-ui redis clamav gotenberg \
-    prometheus grafana alertmanager
+docker build -f backend/Dockerfile -t inspector-backend:$(git rev-parse --short HEAD) .
+docker build -f workers/Dockerfile -t inspector-workers:$(git rev-parse --short HEAD) .
 ```
 
-Дождаться `docker compose ps` — все нужные сервисы `healthy`/`Up`. ClamAV поднимается дольше остальных
-(качает базы сигнатур, `start_period: 120s`).
+Тег — короткий git SHA или версия релиза; не используйте `latest` на стенде — откатиться будет некуда.
+`TAG` в `infra/.env` подставляется в оверлей. CI сейчас проверяет `build/vet/lint/test` (Go) и `pytest`
+(воркеры), но образы не пушит — публикация в registry подключается отдельным job'ом, когда появится
+реальный стенд.
 
-## 3. Backend-сервисы
+## Конфигурация и секреты
 
-На стенде backend-сервисы **не** используют `config.yaml` — только ENV (см. `.env.example` в
-`backend/`, правило №10 `backend/CLAUDE.md`: секреты только через ENV, `config.yaml` в образ не
-попадает — `Dockerfile` кладёт только `config.example.yaml`, которого достаточно для дефолтов, всё
-чувствительное переопределяется ENV).
+Сервисы читают `config.yaml` из образа (это `config.example.yaml` — безопасные дефолты) и переопределяют
+ENV-переменными; секреты — только ENV (правило №10 `backend/CLAUDE.md`). Состав переменных —
+`backend/.env.example`. На стенде секреты живут в `infra/.env` (в `.gitignore`), не в репозитории.
 
-Добавьте в `infra/docker-compose.yml` (или в отдельный `infra/docker-compose.stand.yml`, накатываемый
-поверх через `-f`) сервисы backend, например:
+Заданные в оверлее по умолчанию учётные данные Postgres (`postgres/postgres`) и MinIO (`minioadmin`) — для
+тестового стенда в закрытой сети; для всего, что видно снаружи, задайте `DATABASE_PASSWORD`,
+`MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` в `infra/.env` (и те же значения для контейнеров `postgres`/`minio` в
+`docker-compose.yml`).
 
-```yaml
-services:
-  api:
-    image: ghcr.io/tanoklllmonbku/hakaton-ldt-backend:<tag>
-    command: ["/app/bin/api"]
-    env_file: [.env]
-    environment:
-      DATABASE_HOST: postgres
-      BROKER_BOOTSTRAP_SERVERS: kafka:9092
-      MINIO_ENDPOINT: minio:9000
-    ports: ["8080:8080", "9091:9091"]
-    depends_on:
-      postgres: { condition: service_healthy }
-      kafka: { condition: service_healthy }
-    networks: [inspector-net]
+## Воркеры и LLM
 
-  relay:
-    image: ghcr.io/tanoklllmonbku/hakaton-ldt-backend:<tag>
-    command: ["/app/bin/relay"]
-    env_file: [.env]
-    networks: [inspector-net]
+Без настроек `worker-extract` извлекает значения regex-шаблонами (44 параметра). Чтобы включить LLM,
+задайте в `infra/.env` `LLM_BASE_URL` (любой OpenAI-совместимый API: vLLM, llama-server, Ollama, облако),
+`LLM_MODEL`, при необходимости `LLM_API_KEY`. Не запускайте `mockworkers` одновременно с
+`worker-parse`/`worker-extract`.
 
-  # engine, rin-sync, rin-mock — аналогично, появятся начиная с M2–M4
-```
+## Миграции
 
-`.env` на стенде — реальный файл с секретами (пароли БД, ключи MinIO), **не коммитится**, живёт только
-на машине стенда (или в секрет-хранилище CI/CD, если развёртывание автоматизировано). Начните с
-[backend/.env.example](../backend/.env.example) как шаблона состава переменных.
+Применяются отдельным шагом до старта приложения, не автоматически внутри `api` (осознанно: накат схемы
+контролируем и виден в логах отдельно от рестарта сервиса). В оверлее это одноразовый сервис `migrate`;
+вручную: `cd backend && make migrate`. Миграции **не редактируются задним числом** (правило №2).
 
-## 4. Миграции
+## TLS / реверс-прокси
 
-Миграции применяются отдельным шагом при выкладке, не автоматически при старте `api` (осознанно — чтобы
-накат схемы был контролируемым и виден в логах деплоя отдельно от рестарта сервиса):
+Caddy в оверлее проксирует на контейнер `api` (`infra/caddy/Caddyfile.stand`), HTTPS — `tls internal`
+(самоподписанный) на :8443, HTTP — на :8081. Для публичного домена замените `tls internal` на
+`tls <email>` (Caddy сам получит сертификат Let's Encrypt).
 
-```bash
-cd backend
-DATABASE_USER=... DATABASE_PASSWORD=... DATABASE_DATABASE=inspector make migrate
-```
+## Откат
 
-`make migrate` разворачивает `golang-migrate` в Docker-контейнере на сети `inspector-net` — на стенде
-это можно гонять как отдельный шаг CD-пайплайна перед перезапуском `api`.
+Образы тегируются по git SHA — откат это смена `TAG` и `docker compose ... up -d <service>` (пересоздаст
+только изменившиеся контейнеры). Схема БД откатывается новой миграцией; код сам по себе БД не откатывает —
+проверяйте совместимость миграции со старым кодом.
 
-## 5. TLS / реверс-прокси
+## Известные ограничения стенда
 
-`infra/caddy/Caddyfile` в текущем виде рассчитан на локальный само-подписанный сертификат
-(`tls internal`) и проксирует на `host.docker.internal:8080` (локальный `go run`). На стенде, где `api`
-работает в том же compose, поменяйте:
-
-- `reverse_proxy host.docker.internal:8080` → `reverse_proxy api:8080` (имя сервиса в сети `inspector-net`);
-- `tls internal` → реальный домен и `tls {email}` (Caddy сам получит сертификат Let's Encrypt), если у
-  стенда есть публичный DNS-домен; иначе оставьте `tls internal` и добавьте корневой сертификат клиентам.
-
-## 6. Проверка после выкладки
-
-```bash
-curl -sf https://<стенд>/healthz
-curl -sf https://<стенд>/readyz
-curl -s https://<стенд>/metrics | grep inspector_ | head
-```
-
-Плюс проверки из [operations.md#health-checks](operations.md#health-checks) — Grafana дашборд, kafka-ui
-на предмет накопления в топиках (значит consumer не тянет), Alertmanager без активных алертов.
-
-## 7. Откат
-
-Так как образы тегируются по git SHA, откат — смена тега в compose/манифесте на предыдущий и
-`docker compose up -d <service>` (пересоздаёт только изменившиеся контейнеры). Миграции **не
-редактируются задним числом** (правило №2) — откат схемы БД делается новой миграцией, откат кода один
-не откатывает БД сам по себе; проверяйте совместимость новой миграции со старым кодом при планировании
-отката.
-
-## Дальнейшие шаги (не сделано, по мере вех)
-
-- Автоматизация: job в `.github/workflows/` на сборку + пуш образа в GHCR и (опционально) деплой по SSH
-  или через registry webhook — сейчас CI только `build/vet/lint/test`.
-- Секреты на стенде — сейчас `.env`-файл руками; для продакшен-уровня стоит вынести в секрет-менеджер
-  (например, GitHub Actions secrets + `docker compose --env-file` при деплое, или Vault).
-- Бэкапы и восстановление Postgres на стенде — см. [operations.md#бэкапы](operations.md#бэкапы).
+- **Нет таймаутов заданий:** если воркер не запущен или упал, процесс остаётся в `PARSING`
+  ([architecture.md#границы-текущей-реализации](architecture.md#границы-текущей-реализации)) — смотрите
+  `docker compose ps` и логи воркеров.
+- Нет healthcheck'ов у контейнеров приложения (в образах нет curl); готовность — по `/healthz`/`/readyz` API.
+- Автоматический деплой (job в CI, пуш в GHCR) и секрет-менеджер — не сделаны.
+- Бэкапы Postgres — [operations.md#бэкапы](operations.md#бэкапы).

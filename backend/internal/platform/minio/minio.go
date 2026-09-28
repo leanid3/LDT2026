@@ -20,12 +20,19 @@ type Config struct {
 	UseSSL    bool
 	Region    string
 	Timeout   time.Duration
+
+	// PublicEndpoint — адрес MinIO, каким его видит БРАУЗЕР (presigned-ссылки подписываются под конкретный
+	// Host, подменить его после подписи нельзя). Пусто — совпадает с Endpoint (backend на хосте рядом с
+	// MinIO). В контейнерах Endpoint = "minio:9000" (внутренняя сеть), а браузеру нужен опубликованный адрес.
+	PublicEndpoint string
+	PublicUseSSL   bool
 }
 
 type Client struct {
-	client *minio.Client
-	cfg    Config
-	log    *slog.Logger
+	client    *minio.Client
+	presigner *minio.Client // подписывает ссылки для браузера; не ходит в сеть (регион задан)
+	cfg       Config
+	log       *slog.Logger
 }
 
 // New подключается к MinIO и гарантирует существование бакета.
@@ -39,7 +46,19 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Client, error) {
 		return nil, fmt.Errorf("create minio client: %w", err)
 	}
 
-	client := &Client{client: c, cfg: cfg, log: log}
+	presigner := c
+	if cfg.PublicEndpoint != "" && (cfg.PublicEndpoint != cfg.Endpoint || cfg.PublicUseSSL != cfg.UseSSL) {
+		presigner, err = minio.New(cfg.PublicEndpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
+			Secure: cfg.PublicUseSSL,
+			Region: cfg.Region, // с заданным регионом подпись считается локально, без запроса к MinIO
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create minio presign client: %w", err)
+		}
+	}
+
+	client := &Client{client: c, presigner: presigner, cfg: cfg, log: log}
 	if err := client.ensureBucket(ctx); err != nil {
 		return nil, err
 	}
@@ -67,6 +86,12 @@ func (c *Client) ensureBucket(ctx context.Context) error {
 
 func (c *Client) Raw() *minio.Client {
 	return c.client
+}
+
+// Presigner — клиент для presigned-ссылок, отдаваемых браузеру (POST на загрузку, GET на просмотр).
+// Все остальные операции (чтение, запись, проверки) — через Raw().
+func (c *Client) Presigner() *minio.Client {
+	return c.presigner
 }
 
 func (c *Client) BucketName() string {

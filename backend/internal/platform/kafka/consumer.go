@@ -33,6 +33,20 @@ type ConsumerConfig struct {
 	MaxPollIntervalMs   int // default >= 1_800_000 (30 мин, backend-plan.md §6.3)
 	FetchMaxBytes       int
 	AutoOffsetReset     string // earliest, latest, none (по умолчанию latest)
+
+	// MaxAttempts попыток обработки сообщения (по умолчанию 3), между ними — линейный backoff
+	// RetryBackoff (по умолчанию 1с). backend-plan.md §6.3.
+	MaxAttempts  int
+	RetryBackoff time.Duration
+	// DLQ — куда отправить сообщение, которое не удалось обработать за MaxAttempts попыток
+	// (<topic>.dlq, исходное тело + причина в заголовках). nil — сообщение только логируется и
+	// пропускается: без DLQ это тихая потеря события, поэтому все сервисы должны задавать DLQ.
+	DLQ DLQSender
+}
+
+// DLQSender — то, чем consumer пишет в dead-letter топик. kafka.Producer подходит как есть.
+type DLQSender interface {
+	SendRaw(ctx context.Context, topic string, key string, headers map[string]string, value []byte) error
 }
 
 func (c ConsumerConfig) withDefaults() ConsumerConfig {
@@ -42,6 +56,12 @@ func (c ConsumerConfig) withDefaults() ConsumerConfig {
 	if c.FetchMaxBytes <= 0 {
 		c.FetchMaxBytes = 50 * 1024 * 1024
 	}
+	if c.MaxAttempts <= 0 {
+		c.MaxAttempts = 3
+	}
+	if c.RetryBackoff <= 0 {
+		c.RetryBackoff = time.Second
+	}
 	return c
 }
 
@@ -50,6 +70,7 @@ type consumer struct {
 	topics      []string
 	handler     Handler
 	commitChain chan *kafka.Message
+	cfg         ConsumerConfig
 	wg          sync.WaitGroup
 	once        sync.Once
 	log         *slog.Logger
@@ -93,6 +114,7 @@ func NewConsumer(handler Handler, topics []string, cfg ConsumerConfig, log *slog
 		topics:      topics,
 		handler:     handler,
 		commitChain: make(chan *kafka.Message, 1000),
+		cfg:         cfg,
 		log:         log,
 	}, nil
 }
@@ -139,11 +161,73 @@ func (c *consumer) pollLoop(ctx context.Context) {
 
 		c.markBrokerUp()
 
-		if err := c.handler.Handle(ctx, msg); err != nil {
-			c.log.Error("failed to handle message", "error", err, "topic", *msg.TopicPartition.Topic)
-			continue
+		if !c.processWithRetry(ctx, msg) {
+			return // ctx отменён посреди обработки — offset не коммитим, сообщение придёт снова
 		}
 		c.commitChain <- msg
+	}
+}
+
+// processWithRetry обрабатывает сообщение до MaxAttempts раз; не справилось — уводит в <topic>.dlq.
+// Возвращает true, если сообщение "закрыто" (обработано или сохранено в DLQ) и его offset можно
+// коммитить. false — только если контекст отменён: тогда сообщение не трогаем.
+//
+// Без этого ошибка обработчика означала пропуск: следующий успешный commit "перепрыгивал" сбойное
+// сообщение, и событие терялось молча (процесс навсегда зависал в PARSING).
+func (c *consumer) processWithRetry(ctx context.Context, msg *kafka.Message) bool {
+	topic := ""
+	if msg.TopicPartition.Topic != nil {
+		topic = *msg.TopicPartition.Topic
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= c.cfg.MaxAttempts; attempt++ {
+		if lastErr = c.handler.Handle(ctx, msg); lastErr == nil {
+			return true
+		}
+		c.log.Warn("failed to handle message", "error", lastErr, "topic", topic, "offset", msg.TopicPartition.Offset,
+			"attempt", attempt, "max_attempts", c.cfg.MaxAttempts)
+		if ctx.Err() != nil {
+			return false
+		}
+		if attempt < c.cfg.MaxAttempts {
+			sleep(ctx, time.Duration(attempt)*c.cfg.RetryBackoff)
+		}
+	}
+
+	if c.cfg.DLQ == nil {
+		c.log.Error("message dropped after retries: no DLQ configured", "topic", topic, "error", lastErr)
+		return true
+	}
+	return c.sendToDLQ(ctx, msg, topic, lastErr)
+}
+
+// sendToDLQ повторяет отправку, пока не получится: если положить в DLQ не вышло, коммитить нельзя —
+// иначе сообщение потеряется. Блокирует партицию, но это лучше тихой потери.
+func (c *consumer) sendToDLQ(ctx context.Context, msg *kafka.Message, topic string, cause error) bool {
+	headers := map[string]string{
+		"dlq_error":            cause.Error(),
+		"dlq_source_topic":     topic,
+		"dlq_source_partition": fmt.Sprint(msg.TopicPartition.Partition),
+		"dlq_source_offset":    msg.TopicPartition.Offset.String(),
+		"dlq_failed_at":        time.Now().UTC().Format(time.RFC3339),
+	}
+	for _, h := range msg.Headers {
+		if _, taken := headers[h.Key]; !taken {
+			headers[h.Key] = string(h.Value)
+		}
+	}
+	for {
+		err := c.cfg.DLQ.SendRaw(ctx, topic+".dlq", string(msg.Key), headers, msg.Value)
+		if err == nil {
+			c.log.Error("message moved to DLQ", "topic", topic, "dlq", topic+".dlq", "offset", msg.TopicPartition.Offset, "error", cause)
+			return true
+		}
+		c.log.Error("failed to publish to DLQ, will retry", "error", err, "topic", topic)
+		if ctx.Err() != nil {
+			return false
+		}
+		sleep(ctx, 2*time.Second)
 	}
 }
 

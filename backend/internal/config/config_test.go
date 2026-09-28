@@ -19,3 +19,12 @@ func TestLoad_FromEnvOnly(t *testing.T) {
 	require.Equal(t, 8081, cfg.Server.Port)
 	require.Equal(t, "info", cfg.Logger.Level, "env-default should apply when no config file and no env override")
 }
+
+func TestLoad_FromExampleYAML(t *testing.T) {
+	cfg, err := Load("../../config.example.yaml")
+	require.NoError(t, err)
+
+	require.NotEmpty(t, cfg.Auth.JWTSecret)
+	require.Equal(t, []string{"1m", "5m", "15m"}, cfg.Rin.RetryDelays)
+	require.Equal(t, "localhost:3310", cfg.ClamAV.Address)
+}

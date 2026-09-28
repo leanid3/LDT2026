@@ -1,4 +1,5 @@
-.PHONY: up down gen migrate seed lint test e2e run-api build tools
+.PHONY: up down gen migrate seed lint test e2e build tools \
+	run-api run-relay run-engine run-mockworkers run-rin-sync run-rin-mock
 
 INFRA_COMPOSE := ../infra/docker-compose.yml
 TOOLS_DIR := ../tools
@@ -34,18 +35,14 @@ tools: $(BIN_DIR)/oapi-codegen $(BIN_DIR)/golangci-lint ## Собрать dev-и
 gen: $(BIN_DIR)/oapi-codegen ## Сгенерировать код из contracts/openapi.yaml
 	./$(BIN_DIR)/oapi-codegen -config oapi-codegen.yaml ../contracts/openapi.yaml
 
-migrate: ## Применить миграции к базе (migrations/) через golang-migrate
-	@if [ -z "$(wildcard migrations/*.sql)" ]; then \
-		echo "migrate: миграций пока нет (появятся в M1, backend-plan.md §5), пропускаю"; \
-	else \
-		docker run --rm --network inspector-net \
-			-v $(CURDIR)/migrations:/migrations \
-			$(MIGRATE_IMAGE) \
-			-path=/migrations -database "postgres://$(DATABASE_USER):$(DATABASE_PASSWORD)@postgres:5432/$(DATABASE_DATABASE)?sslmode=disable" \
-			up; \
-	fi
+migrate: ## Применить миграции к базе (migrations/, черновая схема §5 — см. docs/development.md#миграции)
+	docker run --rm --network inspector-net \
+		-v $(CURDIR)/migrations:/migrations \
+		$(MIGRATE_IMAGE) \
+		-path=/migrations -database "postgres://$(DATABASE_USER):$(DATABASE_PASSWORD)@postgres:5432/$(DATABASE_DATABASE)?sslmode=disable" \
+		up
 
-seed: ## Импорт Матрицы параметров + тестовые пользователи
+seed: ## Матрица (132 параметра из xlsx -> params + contracts/matrix.json) и тестовые пользователи
 	go run ./cmd/tools/import-matrix
 	go run ./cmd/tools/seed-users
 
@@ -55,11 +52,26 @@ lint: $(BIN_DIR)/golangci-lint ## golangci-lint
 test: ## Unit + интеграционные тесты (testcontainers поднимает свои контейнеры сам)
 	go test ./...
 
-e2e: ## Сквозной сценарий на тестовом объекте
-	@echo "e2e: TODO(M5), см. backend-plan.md" && exit 1
+e2e: ## Сквозной сценарий через публичный API (нужны стенд, relay, engine, воркеры, rin-mock/rin-sync)
+	python3 ../scripts/e2e.py
 
 build: ## Собрать все бинари cmd/*
 	go build ./...
 
 run-api: ## Запустить API локально (ожидает `make up` и `make migrate`)
 	go run ./cmd/api
+
+run-relay: ## outbox_events -> Kafka
+	go run ./cmd/relay
+
+run-engine: ## Consumer результатов воркеров + движок проверок
+	go run ./cmd/engine
+
+run-mockworkers: ## Заглушка parse-worker/LLM-worker для локального сквозного прогона
+	go run ./cmd/mockworkers
+
+run-rin-sync: ## Отправка финализированных протоколов в ИАИС «РиН»
+	go run ./cmd/rin-sync
+
+run-rin-mock: ## HTTP-заглушка ИАИС «РиН»
+	go run ./cmd/rin-mock

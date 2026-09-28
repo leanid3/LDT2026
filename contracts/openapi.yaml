@@ -2,54 +2,34 @@ openapi: "3.0.3"
 info:
   title: Инспектор ИИ API
   description: >
-    Черновик контракта (веха M0, backend-plan.md). Полное покрытие эндпоинтов раздела 7
-    добавляется по мере вех M1–M5. Контракт — spec-first: любое изменение API начинается здесь,
-    затем `make gen`, затем код (backend/CLAUDE.md, правило 1).
-  version: "0.1.0"
+    Контракт растёт по вехам (backend-plan.md). M0 — health/auth. Этот заход добавляет объекты,
+    загрузку/подтверждение документов, реестр, процесс проверки, findings, протокол — до границы,
+    где начинается работа Python-воркеров (см. docs/architecture.md). Контракт — spec-first: любое
+    изменение API начинается здесь, затем `make gen`, затем код (backend/CLAUDE.md, правило 1).
+
+    `/healthz`, `/readyz`, `/metrics` не описаны здесь: это платформенные эндпоинты вне версионируемого
+    API (`internal/platform/health`, root уровня, не `/api/v1`) — см. docs/operations.md#health-checks.
+  version: "0.3.0"
 servers:
   - url: /api/v1
 
 tags:
-  - name: system
-    description: Служебные эндпоинты (health, readiness)
   - name: auth
     description: Аутентификация
+  - name: objects
+    description: Объекты строительства
+  - name: documents
+    description: Загрузка, подтверждение и реестр документов
+  - name: processes
+    description: Процесс проверки
+  - name: findings
+    description: Карточки доказательств и верификация
+  - name: protocol
+    description: Протокол проверки
+  - name: matrix
+    description: Каталог параметров Матрицы (132 параметра)
 
 paths:
-  /healthz:
-    get:
-      operationId: healthz
-      tags: [system]
-      summary: Liveness-проверка
-      security: []
-      responses:
-        "200":
-          description: Сервис жив
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StatusResponse"
-
-  /readyz:
-    get:
-      operationId: readyz
-      tags: [system]
-      summary: Readiness-проверка (доступность зависимостей)
-      security: []
-      responses:
-        "200":
-          description: Сервис готов принимать трафик
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StatusResponse"
-        "503":
-          description: Одна или несколько зависимостей недоступны
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/StatusResponse"
-
   /auth/login:
     post:
       operationId: login
@@ -87,12 +67,451 @@ paths:
         "401":
           $ref: "#/components/responses/Error"
 
+  /objects:
+    post:
+      operationId: createObject
+      tags: [objects]
+      summary: Создать объект строительства
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ObjectCreateRequest"
+      responses:
+        "201":
+          description: Объект создан
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        "400":
+          $ref: "#/components/responses/Error"
+    get:
+      operationId: listObjects
+      tags: [objects]
+      summary: Список объектов
+      responses:
+        "200":
+          description: Список
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObjectList"
+
+  /objects/{id}:
+    get:
+      operationId: getObject
+      tags: [objects]
+      summary: Объект по id
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Объект
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Object"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /objects/{id}/processes:
+    get:
+      operationId: listObjectProcesses
+      tags: [objects]
+      summary: Процессы проверки объекта (новые сверху)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Список процессов
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessList"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /params:
+    get:
+      operationId: listParams
+      tags: [matrix]
+      summary: Каталог параметров Матрицы (M-001…M-132) — подписи, единицы, приоритет для интерфейса
+      responses:
+        "200":
+          description: Активные параметры текущей редакции Матрицы
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParamList"
+
+  /files/{id}/download-url:
+    get:
+      operationId: getFileDownloadUrl
+      tags: [documents]
+      summary: Временная ссылка на файл — для просмотра рядом ПД/РД с подсветкой bbox из доказательства
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Presigned GET (действует ограниченное время)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileDownloadUrl"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /documents/upload:
+    post:
+      operationId: uploadDocuments
+      tags: [documents]
+      summary: Заявить файлы к загрузке (создаёт процесс или дозагружает в существующий), выдаёт presigned POST
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentsUploadRequest"
+      responses:
+        "200":
+          description: process_id + presigned POST на каждый файл
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentsUploadResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Процесс в статусе, не допускающем дозагрузку (PARSING/FINALIZED)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /documents/{process_id}/confirm:
+    post:
+      operationId: confirmDocuments
+      tags: [documents]
+      summary: Подтвердить загруженные в MinIO файлы (sha256, ClamAV, magic bytes, pdfcpu)
+      parameters:
+        - $ref: "#/components/parameters/ProcessIdParam"
+      responses:
+        "200":
+          description: Результат проверки по каждому файлу
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /documents/registry-template:
+    get:
+      operationId: getRegistryTemplate
+      tags: [documents]
+      summary: Пустой шаблон реестра файлов (XLSX с листом «Инструкция» или CSV)
+      description: >
+        Лист «Реестр» — заголовки колонок, лист «Инструкция» — как заполнять, допустимые значения, примеры,
+        как выбирается актуальная редакция. В колонках со списками значений — выпадающие списки.
+        Готовый файл загружается через `POST /documents/{process_id}/registry`.
+      parameters:
+        - $ref: "#/components/parameters/RegistryTemplateFormat"
+      responses:
+        "200":
+          description: "Файл шаблона (Content-Disposition: attachment)"
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /documents/{process_id}/registry-template:
+    get:
+      operationId: getProcessRegistryTemplate
+      tags: [documents]
+      summary: Шаблон реестра, предзаполненный загруженными файлами процесса
+      description: >
+        Строки уже содержат object_id, file_name и sha256 принятых файлов — остаётся указать стадию, шифр,
+        редакцию и статус утверждения. Если реестр уже загружался, в строках подставлены и его значения:
+        файл можно поправить и загрузить снова.
+      parameters:
+        - $ref: "#/components/parameters/ProcessIdParam"
+        - $ref: "#/components/parameters/RegistryTemplateFormat"
+      responses:
+        "200":
+          description: "Предзаполненный шаблон (Content-Disposition: attachment)"
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /documents/{process_id}/registry:
+    post:
+      operationId: uploadRegistry
+      tags: [documents]
+      summary: Загрузить реестр файлов (CSV/JSON/XLSX) и пересчитать выбор актуальных редакций
+      parameters:
+        - $ref: "#/components/parameters/ProcessIdParam"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Итог разбора и сопоставления реестра
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistryUploadResponse"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}:
+    get:
+      operationId: getProcess
+      tags: [processes]
+      summary: Статус процесса, сценарий, статусы загрузки по стадиям
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Процесс
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}/files:
+    get:
+      operationId: listProcessFiles
+      tags: [processes]
+      summary: Файлы процесса с редакциями и статусами проверки
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Файлы
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessFilesResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}/start:
+    post:
+      operationId: startProcess
+      tags: [processes]
+      summary: Запустить проверку (PENDING → PARSING), нарезать задания парсинга
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Процесс переведён в PARSING
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessDetail"
+        "409":
+          description: Процесс не в статусе PENDING
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}/finalize:
+    post:
+      operationId: finalizeProcess
+      tags: [processes]
+      summary: Финализировать процесс (все CANDIDATE решены)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Процесс FINALIZED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessDetail"
+        "409":
+          description: Есть нерешённые CANDIDATE, либо процесс не в COMPLETED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}/unfinalize:
+    post:
+      operationId: unfinalizeProcess
+      tags: [processes]
+      summary: Отменить финализацию (только supervisor/admin, причина обязательна, в аудит)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnfinalizeRequest"
+      responses:
+        "200":
+          description: Процесс возвращён в COMPLETED
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessDetail"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}/sync:
+    get:
+      operationId: getProcessSync
+      tags: [processes]
+      summary: Статус синхронизации с ИАИС «РиН»
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Статус синхронизации
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStatusResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /processes/{id}/protocol:
+    get:
+      operationId: getProtocol
+      tags: [protocol]
+      summary: Протокол проверки (актуальная версия)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Протокол
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtocolResponse"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /findings/{id}:
+    get:
+      operationId: getFinding
+      tags: [findings]
+      summary: Карточка доказательства
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Finding
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Finding"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /findings/{id}/decision:
+    post:
+      operationId: decideFinding
+      tags: [findings]
+      summary: Подтвердить/отклонить/уточнить finding
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FindingDecisionRequest"
+      responses:
+        "200":
+          description: Finding обновлён
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Finding"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Процесс не в статусе, допускающем верификацию
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ProcessIdParam:
+      name: process_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RegistryTemplateFormat:
+      name: format
+      in: query
+      required: false
+      description: Формат шаблона; по умолчанию xlsx (в нём есть лист с инструкцией и выпадающие списки)
+      schema:
+        type: string
+        enum: [xlsx, csv]
+        default: xlsx
 
   responses:
     Error:
@@ -103,14 +522,6 @@ components:
             $ref: "#/components/schemas/Error"
 
   schemas:
-    StatusResponse:
-      type: object
-      required: [status]
-      properties:
-        status:
-          type: string
-          example: ok
-
     # Единый формат ошибки, backend-plan.md §7:
     # { "error": { "code", "message", "details" }, "request_id" }
     Error:
@@ -175,6 +586,583 @@ components:
           $ref: "#/components/schemas/Role"
         is_active:
           type: boolean
+
+    # --- enum'ы строго по backend-plan.md §4.1 ---
+
+    ProcessStatus:
+      type: string
+      enum: [PENDING, PARSING, READY, VERIFYING, COMPLETED, FINALIZED]
+
+    Scenario:
+      type: string
+      enum: [FULL, PD_RD_ONLY, PD_ID_ONLY, RD_ID_ONLY, SINGLE_ONLY, PARTIALLY_LOADED]
+
+    DocStage:
+      type: string
+      enum: [PD, RD, ID]
+
+    UploadStageStatus:
+      type: string
+      enum: [UPLOADED, PARTIAL, MISSING]
+
+    FindingStatus:
+      type: string
+      enum:
+        - NEGATIVE_VERIFIED
+        - CANDIDATE
+        - CONFIRMED_VIOLATION
+        - MISSING_EVIDENCE
+        - NOT_APPLICABLE
+        - NOT_COMPARABLE
+        - CLARIFICATION_REQUIRED
+        - SUSPICION
+
+    InspectorStatus:
+      type: string
+      enum: [PENDING, CONFIRMED_VIOLATION, NEGATIVE_VERIFIED, CLARIFICATION_REQUIRED]
+
+    FileCheckStatus:
+      type: string
+      enum:
+        - UPLOADING
+        - UPLOADED
+        - REJECTED_FORMAT
+        - REJECTED_SIZE
+        - REJECTED_CORRUPTED
+        - REJECTED_VIRUS
+        - ACCEPTED
+
+    SyncStatus:
+      type: string
+      enum: [NOT_REQUIRED, PENDING_SYNC, SYNCED, SYNC_FAILED]
+
+    ReasonCode:
+      type: string
+      enum:
+        - WRONG_REVISION
+        - APPROVED_CHANGE
+        - OCR_ERROR
+        - LINKING_ERROR
+        - NOT_APPLICABLE
+        - DUPLICATE
+        - OTHER
+
+    # --- objects ---
+
+    Object:
+      type: object
+      required: [id, name, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        external_id:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        customer:
+          type: string
+        contractor:
+          type: string
+        permit_number:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ObjectCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        external_id:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+        customer:
+          type: string
+        contractor:
+          type: string
+        permit_number:
+          type: string
+
+    ObjectList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Object"
+
+    # --- documents ---
+
+    UploadFileRequest:
+      type: object
+      required: [original_name, size_bytes]
+      properties:
+        original_name:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+
+    DocumentsUploadRequest:
+      type: object
+      required: [object_id, files]
+      properties:
+        object_id:
+          type: string
+          format: uuid
+        process_id:
+          type: string
+          format: uuid
+          description: Указать для дозагрузки в существующий процесс; иначе создаётся новый
+        files:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/UploadFileRequest"
+
+    PresignedUpload:
+      type: object
+      required: [file_id, original_name, upload_url, upload_fields, expires_at]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        original_name:
+          type: string
+        upload_url:
+          type: string
+        upload_fields:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    DocumentsUploadResponse:
+      type: object
+      required: [process_id, files]
+      properties:
+        process_id:
+          type: string
+          format: uuid
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/PresignedUpload"
+
+    ConfirmedFile:
+      type: object
+      required: [file_id, check_status]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        check_status:
+          $ref: "#/components/schemas/FileCheckStatus"
+        check_error:
+          type: string
+        page_count:
+          type: integer
+
+    ConfirmResponse:
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfirmedFile"
+
+    RegistryUploadResponse:
+      type: object
+      required: [total_rows, matched, unmatched]
+      properties:
+        total_rows:
+          type: integer
+        matched:
+          type: integer
+          description: Строки, применённые к файлам
+        unmatched:
+          type: integer
+          description: Корректные строки, для которых нет загруженного файла (имя должно совпадать точно либо указать sha256)
+        invalid:
+          type: integer
+          description: Строки, отклонённые из-за недопустимых значений (не применялись); причины — в errors
+        errors:
+          type: array
+          description: "Проблемы, из-за которых строка не применена, — «строка N, поле: причина»"
+          items:
+            type: string
+        warnings:
+          type: array
+          description: Строка применена, но что-то не заполнено (например, нет статуса — файл не сможет быть эталоном)
+          items:
+            type: string
+
+    # --- processes ---
+
+    UploadStatusEntry:
+      type: object
+      required: [stage, status]
+      properties:
+        stage:
+          $ref: "#/components/schemas/DocStage"
+        status:
+          $ref: "#/components/schemas/UploadStageStatus"
+
+    ProcessDetail:
+      type: object
+      required: [id, object_id, status, upload_status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        object_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ProcessStatus"
+        scenario:
+          $ref: "#/components/schemas/Scenario"
+        matrix_version:
+          type: string
+        upload_status:
+          type: array
+          items:
+            $ref: "#/components/schemas/UploadStatusEntry"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        finalized_at:
+          type: string
+          format: date-time
+        load_warnings:
+          type: array
+          description: Готовые предупреждения о полноте загрузки для показа пользователю (частичные сценарии, отклонённые файлы, неопределённые редакции)
+          items:
+            $ref: "#/components/schemas/LoadWarning"
+
+    FileInfo:
+      type: object
+      required: [id, original_name, check_status, is_current, uploaded_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        original_name:
+          type: string
+        doc_stage:
+          $ref: "#/components/schemas/DocStage"
+        discipline:
+          type: string
+        document_code:
+          type: string
+        revision:
+          type: string
+        approval_status:
+          type: string
+        is_current:
+          type: boolean
+        selection_status:
+          type: string
+        selection_reason:
+          type: string
+        check_status:
+          $ref: "#/components/schemas/FileCheckStatus"
+        uploaded_at:
+          type: string
+          format: date-time
+
+    ProcessFilesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FileInfo"
+
+    UnfinalizeRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+
+    SyncStatusResponse:
+      type: object
+      required: [sync_status]
+      properties:
+        sync_status:
+          $ref: "#/components/schemas/SyncStatus"
+        updated_at:
+          type: string
+          format: date-time
+
+    # --- findings / protocol ---
+
+    Finding:
+      type: object
+      required: [id, check_id, finding_status, inspector_status, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        check_id:
+          type: string
+          format: uuid
+        parent_finding_id:
+          type: string
+          format: uuid
+        finding_status:
+          $ref: "#/components/schemas/FindingStatus"
+        inspector_status:
+          $ref: "#/components/schemas/InspectorStatus"
+        decided_by:
+          type: string
+          format: uuid
+        decided_at:
+          type: string
+          format: date-time
+        reason_code:
+          $ref: "#/components/schemas/ReasonCode"
+        comment:
+          type: string
+        version:
+          type: integer
+        param_code:
+          type: string
+          example: M-055
+          description: Код параметра Матрицы
+        parameter_name:
+          type: string
+          example: Класс прочности бетона монолитных конструкций
+        unit:
+          type: string
+          description: Единица измерения из Матрицы; expected_value/actual_value приведены к ней
+        review_priority:
+          type: string
+          enum: [HIGH, MEDIUM, LOW]
+        expected_value:
+          type: string
+          description: Ожидаемое значение (эталон — обычно ПД)
+        actual_value:
+          type: string
+          description: Фактическое значение (РД/ИД)
+        delta:
+          type: string
+        rationale:
+          type: string
+          description: Почему движок принял такое решение — человекочитаемо, для карточки
+        evidence:
+          type: array
+          description: Доказательства обеих сторон (страница, цитата, bbox) — что подсветить в просмотрщике
+          items:
+            $ref: "#/components/schemas/EvidenceFragment"
+
+    LoadWarning:
+      type: object
+      required: [code, severity, message]
+      properties:
+        code:
+          type: string
+          description: >
+            Стабильный код для логики интерфейса: NO_ACCEPTED_FILES, STAGE_UNKNOWN, STAGE_MISSING, STAGE_PARTIAL,
+            EDITION_UNRESOLVED, FILES_REJECTED, SINGLE_STAGE, PARTIALLY_LOADED
+          example: STAGE_MISSING
+        severity:
+          type: string
+          enum: [info, warning, error]
+          description: info — пояснение; warning — результат будет неполным; error — проверка невозможна без исправления
+        stage:
+          $ref: "#/components/schemas/DocStage"
+        count:
+          type: integer
+          description: Сколько файлов затронуто, если применимо
+        message:
+          type: string
+          description: Готовый текст для пользователя
+
+    EvidenceFragment:
+      type: object
+      required: [file_id, role]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        original_name:
+          type: string
+        stage:
+          $ref: "#/components/schemas/DocStage"
+        page:
+          type: integer
+          minimum: 1
+        bbox:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+          description: >
+            [x0, y0, x1, y1], нормализовано в [0;1], начало координат — левый верхний угол страницы.
+            [0,0,1,1] — положение на странице неизвестно (DOCX/XML). Отсутствует, если геометрии нет.
+        quote:
+          type: string
+          description: Дословная цитата из документа
+        extracted_value:
+          type: string
+        role:
+          type: string
+          enum: [expected, actual]
+
+    ProcessSummary:
+      type: object
+      required: [id, object_id, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        object_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ProcessStatus"
+        scenario:
+          $ref: "#/components/schemas/Scenario"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        finalized_at:
+          type: string
+          format: date-time
+
+    ProcessList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessSummary"
+
+    Param:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+          example: M-055
+        section:
+          type: string
+          example: Раздел 4. КР
+        name:
+          type: string
+        unit:
+          type: string
+        review_priority:
+          type: string
+          enum: [HIGH, MEDIUM, LOW]
+        data_type:
+          type: string
+          enum: [number, ordinal, string]
+        source_pd:
+          type: string
+        source_rd:
+          type: string
+        source_id:
+          type: string
+        trigger_logic:
+          type: string
+          description: Логика ИИ-связи из Матрицы
+
+    ParamList:
+      type: object
+      required: [matrix_version, items]
+      properties:
+        matrix_version:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Param"
+
+    FileDownloadUrl:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    FindingDecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [CONFIRMED_VIOLATION, NEGATIVE_VERIFIED, CLARIFICATION_REQUIRED]
+        reason_code:
+          $ref: "#/components/schemas/ReasonCode"
+        comment:
+          type: string
+
+    ProtocolResponse:
+      type: object
+      required: [process_id, version, status, findings]
+      properties:
+        process_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        status:
+          type: string
+          enum: [DRAFT, VERIFICATION_COMPLETED, PROTOCOL_FINALIZED]
+        matrix_version:
+          type: string
+        dataset_version:
+          type: string
+        model_version:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        finalized_at:
+          type: string
+          format: date-time
+        scenario:
+          $ref: "#/components/schemas/Scenario"
+        upload_status:
+          type: array
+          description: Раздел протокола «Статус загрузки документов» (ТЗ)
+          items:
+            $ref: "#/components/schemas/UploadStatusEntry"
+        load_warnings:
+          type: array
+          description: Предупреждения о полноте загрузки (раздел «Тип проверки»)
+          items:
+            $ref: "#/components/schemas/LoadWarning"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
 
 security:
   - bearerAuth: []

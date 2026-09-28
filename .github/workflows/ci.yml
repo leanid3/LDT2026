@@ -7,12 +7,16 @@ on:
       - "backend/**"
       - "contracts/**"
       - "tools/**"
+      - "workers/**"
+      - "docs/source/**"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "backend/**"
       - "contracts/**"
       - "tools/**"
+      - "workers/**"
+      - "docs/source/**"
       - ".github/workflows/ci.yml"
 
 concurrency:
@@ -59,3 +63,24 @@ jobs:
         run: go test ./... -short
         env:
           CGO_ENABLED: "1"
+
+  # Python-воркеры: юнит-тесты без docker (интеграционные с Postgres включаются TEST_DATABASE_DSN — не в CI).
+  # Контракты (contracts/) проверяются здесь тем же набором golden-примеров, что и в Go-тестах.
+  workers-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: workers/pyproject.toml
+      # Шрифт с кириллицей нужен тестам, которые генерируют PDF (reportlab).
+      - name: Install fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-dejavu-core
+      - name: Install workers
+        working-directory: workers
+        run: pip install -e ".[dev]"
+      - name: pytest
+        working-directory: workers
+        run: python -m pytest tests -q

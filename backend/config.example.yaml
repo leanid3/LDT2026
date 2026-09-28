@@ -9,6 +9,8 @@ server:
   read_timeout: 10s
   write_timeout: 10s
   shutdown_timeout: 5s
+  # Откуда браузеру можно вызывать API (dev-серверы фронтенда). "*" — любой origin.
+  cors_origins: ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"]
 
 database:
   host: "localhost"
@@ -53,3 +55,18 @@ minio:
   use_ssl: false
   region: "us-east-1"
   timeout: 30s
+
+auth:
+  # dev-значение, непригодное для прода — на стенде переопределяется через ENV AUTH_JWT_SECRET
+  # (backend/CLAUDE.md, правило 10: секреты только через ENV).
+  jwt_secret: "dev-only-insecure-secret-change-me"
+  token_ttl: 12h
+
+clamav:
+  address: "localhost:3310"
+  timeout: 30s
+
+rin:
+  endpoint: "http://localhost:8082" # cmd/rin-mock на dev-стенде
+  retry_delays: ["1m", "5m", "15m"] # backend-plan.md §8.9
+  timeout: 10s

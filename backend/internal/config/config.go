@@ -18,6 +18,9 @@ type Config struct {
 	Broker   BrokerConfig   `yaml:"broker"`
 	Metrics  MetricsConfig  `yaml:"metrics"`
 	Minio    MinioConfig    `yaml:"minio"`
+	Auth     AuthConfig     `yaml:"auth"`
+	ClamAV   ClamAVConfig   `yaml:"clamav"`
+	Rin      RinConfig      `yaml:"rin"`
 }
 
 type LoggerConfig struct {
@@ -30,6 +33,8 @@ type ServerConfig struct {
 	ReadTimeout     time.Duration `yaml:"read_timeout" env:"SERVER_READ_TIMEOUT" env-default:"10s"`
 	WriteTimeout    time.Duration `yaml:"write_timeout" env:"SERVER_WRITE_TIMEOUT" env-default:"10s"`
 	ShutdownTimeout time.Duration `yaml:"shutdown_timeout" env:"SERVER_SHUTDOWN_TIMEOUT" env-default:"5s"`
+	// CORSOrigins — откуда браузеру разрешено вызывать API (dev-серверы фронтенда). "*" — любой.
+	CORSOrigins []string `yaml:"cors_origins" env:"SERVER_CORS_ORIGINS" env-separator:"," env-default:"http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"`
 }
 
 type DatabaseConfig struct {
@@ -81,6 +86,30 @@ type MinioConfig struct {
 	UseSSL    bool          `yaml:"use_ssl" env:"MINIO_USE_SSL" env-default:"false"`
 	Region    string        `yaml:"region" env:"MINIO_REGION" env-default:"us-east-1"`
 	Timeout   time.Duration `yaml:"timeout" env:"MINIO_TIMEOUT" env-default:"30s"`
+	// PublicEndpoint — адрес MinIO для браузера (host:port), если он отличается от Endpoint (стенд в
+	// контейнерах: Endpoint=minio:9000, публичный — опубликованный порт/домен). Пусто — как Endpoint.
+	PublicEndpoint string `yaml:"public_endpoint" env:"MINIO_PUBLIC_ENDPOINT"`
+	PublicUseSSL   bool   `yaml:"public_use_ssl" env:"MINIO_PUBLIC_USE_SSL" env-default:"false"`
+}
+
+// AuthConfig — JWT (backend-plan.md §7: "access token (JWT, 12 ч для демо)"). Секрет — только через ENV
+// (backend/CLAUDE.md, правило 10), в config.example.yaml — заведомо непригодное для прода значение.
+type AuthConfig struct {
+	JWTSecret string        `yaml:"jwt_secret" env:"AUTH_JWT_SECRET"`
+	TokenTTL  time.Duration `yaml:"token_ttl" env:"AUTH_TOKEN_TTL" env-default:"12h"`
+}
+
+type ClamAVConfig struct {
+	Address string        `yaml:"address" env:"CLAMAV_ADDRESS" env-default:"localhost:3310"`
+	Timeout time.Duration `yaml:"timeout" env:"CLAMAV_TIMEOUT" env-default:"30s"`
+}
+
+// RinConfig — интеграция с ИАИС «РиН» (backend-plan.md §8.9). RetryDelays — 1/5/15 мин по ТЗ,
+// но конфигурируемо (в конфиге демо-стенда можно уменьшить, чтобы не ждать ретраи вживую).
+type RinConfig struct {
+	Endpoint    string        `yaml:"endpoint" env:"RIN_ENDPOINT"`
+	RetryDelays []string      `yaml:"retry_delays" env:"RIN_RETRY_DELAYS" env-default:"1m,5m,15m"`
+	Timeout     time.Duration `yaml:"timeout" env:"RIN_TIMEOUT" env-default:"10s"`
 }
 
 // Load читает config.yaml (если есть) и переопределяет значениями из ENV; при отсутствии файла

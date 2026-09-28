@@ -17,6 +17,9 @@ import (
 // остальные сервисы публикуют события только через platform/outbox в той же транзакции с бизнес-изменением.
 type Producer interface {
 	Send(ctx context.Context, topic string, key string, headers map[string]string, value interface{}) error
+	// SendRaw публикует уже сериализованный JSON без повторного маршалинга — используется cmd/relay,
+	// который пересылает payload из outbox_events как есть (docs/architecture.md#transactional-outbox--relay).
+	SendRaw(ctx context.Context, topic string, key string, headers map[string]string, value []byte) error
 	Close() error
 }
 
@@ -65,13 +68,18 @@ func NewProducer(cfg ProducerConfig, log *slog.Logger) (Producer, error) {
 	return &producer{client: p, log: log}, nil
 }
 
-// Send публикует сообщение и ждёт delivery report (не только Produce — проверяет ошибку доставки).
+// Send сериализует value в JSON, публикует и ждёт delivery report (не только Produce — проверяет
+// ошибку доставки).
 func (p *producer) Send(ctx context.Context, topic, key string, headers map[string]string, value interface{}) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
 	}
+	return p.SendRaw(ctx, topic, key, headers, data)
+}
 
+// SendRaw публикует уже сериализованные байты и ждёт delivery report.
+func (p *producer) SendRaw(ctx context.Context, topic, key string, headers map[string]string, data []byte) error {
 	msg := &kafka.Message{
 		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 		Key:            []byte(key),
@@ -135,4 +143,12 @@ func (p *producer) Close() error {
 		p.client.Close()
 	})
 	return nil
+}
+
+// NewDLQProducer — продюсер для dead-letter топиков consumer'ов: идемпотентный, acks=all.
+func NewDLQProducer(bootstrapServers, clientID string, log *slog.Logger) (Producer, error) {
+	return NewProducer(ProducerConfig{
+		BootstrapServers: bootstrapServers, ClientID: clientID + "-dlq", Acks: "-1",
+		EnableIdempotence: true, CompressionType: "snappy", Retries: 3,
+	}, log)
 }

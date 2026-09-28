@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inspector-ai/contracts/events/doc.parse.completed.schema.json",
+  "title": "doc.parse.completed",
+  "description": "Общий конверт события (docs/backend-plan.md §6.1). В data — только ссылки на MinIO, не содержимое.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "process_id",
+    "object_id",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Не меняется при ретраях; ключ идемпотентности consumer'а."
+    },
+    "event_type": {
+      "const": "doc.parse.completed"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "object_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "process_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "file_id",
+        "quality"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "file_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "quality": {
+          "enum": [
+            "OK",
+            "LOW_QUALITY",
+            "ABSTAIN",
+            "FAILED"
+          ],
+          "description": "FAILED/ABSTAIN оркестратор считает FAILED-заданием: файл даёт NOT_COMPARABLE, процесс не блокируется."
+        },
+        "layout_key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Ключ layout JSON в MinIO (страницы, блоки текста, bbox в [0;1])."
+        },
+        "page_from": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "page_to": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stats": {
+          "type": "object",
+          "description": "pages, chars, method, ocr_pages, ..."
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

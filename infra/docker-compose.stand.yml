@@ -1,0 +1,136 @@
+# Тестовый стенд: backend и Python-воркеры — контейнеры (поверх инфраструктуры из docker-compose.yml).
+#
+#   cp .env.stand.example .env      # задать AUTH_JWT_SECRET и STAND_HOST
+#   docker compose -f docker-compose.yml -f docker-compose.stand.yml up -d --build
+#
+# Порядок старта: postgres → migrate → seed (132 параметра + демо-пользователи) → engine/api/relay/воркеры.
+# Подробности и проверка — docs/deployment.md.
+
+x-backend: &backend
+  image: inspector-backend:${TAG:-dev}
+  build:
+    context: ..
+    dockerfile: backend/Dockerfile
+  restart: unless-stopped
+  networks: [inspector-net]
+  environment: &backend-env
+    LOGGER_LEVEL: ${LOGGER_LEVEL:-info}
+    DATABASE_HOST: postgres
+    DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+    BROKER_BOOTSTRAP_SERVERS: kafka:9092
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+    MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+    AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?задайте AUTH_JWT_SECRET в infra/.env (см. .env.stand.example)}
+    CLAMAV_ADDRESS: clamav:3310
+    RIN_ENDPOINT: http://rin-mock:8082
+
+x-worker: &worker
+  image: inspector-workers:${TAG:-dev}
+  build:
+    context: ..
+    dockerfile: workers/Dockerfile
+  restart: unless-stopped
+  networks: [inspector-net]
+  environment: &worker-env
+    DATABASE_HOST: postgres
+    DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+    BROKER_BOOTSTRAP_SERVERS: kafka:9092
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+    MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+    # LLM опционален: без него extract работает только на regex-шаблонах.
+    LLM_BASE_URL: ${LLM_BASE_URL:-}
+    LLM_MODEL: ${LLM_MODEL:-}
+    LLM_API_KEY: ${LLM_API_KEY:-}
+
+services:
+  # --------------------------------------------------------------- миграции и посев (разовые)
+  migrate:
+    image: migrate/migrate:v4.18.1
+    volumes:
+      - ../backend/migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://postgres:${DATABASE_PASSWORD:-postgres}@postgres:5432/inspector?sslmode=disable
+      - up
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+    networks: [inspector-net]
+
+  # 132 параметра Матрицы + демо-пользователи (пароль demo-password-123 — ТОЛЬКО для тестового стенда).
+  # --out '' — matrix.json уже есть в образе (contracts/), писать его в контейнере не нужно.
+  seed:
+    <<: *backend
+    command: ["/bin/sh", "-c", "/app/bin/import-matrix --out '' && /app/bin/seed-users"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: "no"
+
+  # --------------------------------------------------------------- backend
+  api:
+    <<: *backend
+    command: ["/app/bin/api"]
+    environment:
+      <<: *backend-env
+      # Presigned-ссылки подписываются под адрес, который видит БРАУЗЕР (внутренний minio:9000 ему недоступен).
+      MINIO_PUBLIC_ENDPOINT: ${STAND_HOST:-localhost}:9000
+      SERVER_CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+    ports:
+      - "8080:8080"
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      kafka: {condition: service_healthy}
+      clamav: {condition: service_healthy}
+      minio: {condition: service_started}
+
+  relay:
+    <<: *backend
+    command: ["/app/bin/relay"]
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      kafka-init: {condition: service_started}
+
+  engine:
+    <<: *backend
+    command: ["/app/bin/engine"]
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      kafka-init: {condition: service_started}
+      minio: {condition: service_started}
+
+  rin-mock:
+    <<: *backend
+    command: ["/app/bin/rin-mock"]
+
+  rin-sync:
+    <<: *backend
+    command: ["/app/bin/rin-sync"]
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      kafka-init: {condition: service_started}
+      rin-mock: {condition: service_started}
+
+  # --------------------------------------------------------------- Python-воркеры
+  worker-parse:
+    <<: *worker
+    command: ["parse"]
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      kafka-init: {condition: service_started}
+      minio: {condition: service_started}
+
+  worker-extract:
+    <<: *worker
+    command: ["extract"]
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      kafka-init: {condition: service_started}
+      minio: {condition: service_started}
+
+  # --------------------------------------------------------------- Caddy: API теперь контейнер, не хост
+  caddy:
+    volumes:
+      - ./caddy/Caddyfile.stand:/etc/caddy/Caddyfile:ro
+    depends_on: [api]

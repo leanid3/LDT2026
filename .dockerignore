@@ -1,0 +1,15 @@
+# Контекст сборки — корень репозитория (нужны backend/, contracts/, docs/source/*.xlsx, workers/).
+.git
+**/.venv
+**/__pycache__
+**/.pytest_cache
+backend/bin
+backend/config.yaml
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.stand.example
+docs/source/*.pdf
+docs/source/*.docx
+frontend
+**/node_modules

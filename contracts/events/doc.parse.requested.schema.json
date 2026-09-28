@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inspector-ai/contracts/events/doc.parse.requested.schema.json",
+  "title": "doc.parse.requested",
+  "description": "Общий конверт события (docs/backend-plan.md §6.1). В data — только ссылки на MinIO, не содержимое.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "process_id",
+    "object_id",
+    "data"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Не меняется при ретраях; ключ идемпотентности consumer'а."
+    },
+    "event_type": {
+      "const": "doc.parse.requested"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "object_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "process_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "job_id",
+        "file_id",
+        "storage_key"
+      ],
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "file_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "doc_stage": {
+          "oneOf": [
+            {
+              "enum": [
+                "PD",
+                "RD",
+                "ID"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discipline": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "storage_key": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Ключ объекта в бакете documents."
+        },
+        "content_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "page_from": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "null для DOCX/XML — весь файл."
+        },
+        "page_to": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

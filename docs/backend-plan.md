@@ -199,10 +199,12 @@ READY|VERIFYING|COMPLETED --дозагрузка файлов--> PARSING (инк
 Черновик. Агент уточняет типы и индексы, но не меняет смысл полей ТЗ (раздел 10 ТЗ).
 Поля листа «СХЕМА GOLD» из xlsx сверить при создании `dataset_items`.
 
-> Реализовано заранее (до M1) как `backend/migrations/0001_platform` … `0007_ml`, черновиком по этой
-> схеме — чтобы дать возможность проверять API и стенд локально, не дожидаясь согласованной финальной
-> схемы. См. `docs/development.md#миграции`. Правки по мере согласования — только новыми миграциями
-> (правило №2, `backend/CLAUDE.md`), не редактированием этих файлов.
+> Реализовано заранее (до M1) как `backend/migrations/0001_platform` … `0009_facts_sha256_nullable`,
+> черновиком по этой схеме — чтобы дать возможность проверять API и стенд локально, не дожидаясь
+> согласованной финальной схемы. Домен (auth/objects/files/process/engine/findings/protocol/rin)
+> реализован поверх этой схемы в рамках M1–M4, см. §11 ниже и `docs/architecture.md`. См.
+> `docs/development.md#миграции`. Правки по мере согласования — только новыми миграциями (правило №2,
+> `backend/CLAUDE.md`), не редактированием этих файлов.
 
 ```sql
 -- 0001_platform
@@ -589,33 +591,81 @@ Backend отвергает факт (с логом и метрикой), есл�
   `/healthz`→200, `/readyz`→200 (реальный ping в postgres), `/metrics` отдаёт `inspector_*`, kafka-ui видит все топики.
   `go build/vet/test/lint ./...` — чисто.
 
+> **Обновление 28.09 (интеграция с командой, code freeze).** Репозитории команды
+> (`Kaiman30/Hakaton-LDT-backend`, `RenFall/Hakaton-LDT`) проанализированы: готовых воркеров и моделей в них
+> нет (RenFall — только документы, Kaiman — AuthService/API-Gateway, дублирующие наш auth, и Python-каркас
+> `ML-Service-Core` без коннекторов). Поэтому: **реальные Python-воркеры написаны в `workers/`**
+> (parse + extract), зафиксирован контракт `contracts/events/*.schema.json` + `contracts/facts.schema.json`,
+> реализованы `import-matrix` (132 параметра) и каталог из 71 правила, DLQ в Go-consumer'ах, обогащённый API
+> для фронтенда ([frontend-api.md](frontend-api.md)). Отметки ниже обновлены.
+>
+> **Примечание к M1–M4 (внеплановый заход, дата не привязана к графику У1/У2):** по просьбе
+> пользователя реализован весь конвейер одним заходом — от загрузки файлов до отправки в ИАИС «РиН» —
+> вместо Python-воркеров и ИАИС «РиН» подставлены наши заглушки (`cmd/mockworkers`, `cmd/rin-mock`),
+> потому что реальных внешних сторон ещё нет. Отмечено ниже честно: что реализовано, что осталось.
+> Полный список того, что сознательно не сделано, и почему — [architecture.md#границы-текущей-реализации](architecture.md#границы-текущей-реализации).
+
 ### M1 — 22.09 · Платформа и приём файлов (У1)
-- [ ] Миграции 0001–0002
-- [ ] `platform/outbox` + `cmd/relay`; `platform/idempotency`; `platform/kafka` consumer с DLQ
-- [ ] upload / confirm: лимиты, presigned POST, sha256 + ClamAV одним потоком, magic bytes, pdfcpu, число страниц
-- [ ] Интеграционные тесты testcontainers на outbox и confirm
+- [x] Миграции 0001–0002 (фактически 0001–0009, включая точечные правки 0008/0009 — см. architecture.md)
+- [x] `platform/outbox` + `cmd/relay`; `platform/idempotency`; `platform/kafka` consumer
+      — до 3 попыток с backoff, затем `<topic>.dlq` (тело + `dlq_*` заголовки), commit только после
+      успешной записи в DLQ; юнит-тесты и проверка живым прогоном. (Раньше ошибка обработчика молча
+      пропускала сообщение — исправлено.)
+- [x] upload / confirm: лимиты, presigned POST (`SetContentLengthRange`), sha256 + ClamAV одним
+      потоком (`io.TeeReader`/`MultiWriter`), magic bytes (PDF/DOCX/XML), pdfcpu (validate + число
+      страниц, с recover() от паник pdfcpu на битых файлах)
+- [x] Интеграционные тесты testcontainers на outbox и confirm (реальный Postgres + реальный MinIO,
+      включая полный HTTP presigned-upload)
 - **DoD:** загрузка PDF через API → файл ACCEPTED → сообщение `doc.parse.requested` видно в kafka-ui
+      — проверено вручную на живом стенде (см. ниже, единая проверка на M1–M4).
 
 ### M2 — 23.09 · Реестр, редакции, доступ (У1) · Матрица и процесс (У2)
-- [ ] У1: парсер реестра (CSV/XLSX/JSON), выбор редакции, статусы загрузки, табличные тесты
-- [ ] У1: auth, роли, audit middleware
-- [ ] У2: миграции 0003–0005, `tools/import-matrix` (лист МАТРИЦА, 132 строки, `matrix_version`)
-- [ ] У2: машина состояний процесса, сценарии, `start`, parse_jobs, fan-in, extract_jobs
-- **DoD:** комплект с реестром → правильные `is_current` и статусы; `make seed` загружает 132 параметра
+- [x] У1: парсер реестра (CSV/XLSX/JSON), выбор редакции (`files.SelectCurrent`, табличные тесты —
+      цикл, висячая ссылка, 0/1/2+ кандидата, SUPERSEDED/CANCELLED/DRAFT), статусы загрузки по стадии
+- [x] У1: auth (bcrypt+JWT), роли, аудит (`audit.Log` внутри транзакций мутирующих операций)
+- [x] У2: `tools/import-matrix` (лист МАТРИЦА, 132 строки, `matrix_version`) → `params` + `contracts/matrix.json`;
+      идемпотентно, параметры, исчезнувшие из редакции, деактивируются (тесты на реальном xlsx)
+- [x] У2: машина состояний процесса, сценарии (`ComputeScenario`), `start` (нарезка `parse_jobs` по
+      20 страниц PDF), fan-in → `extract_jobs`
+- **DoD:** комплект с реестром → правильные `is_current` и статусы — проверено вручную и тестами;
+      `make seed` загружает 132 параметра Матрицы и пользователей.
 
 ### M3 — 24.09 · Сквозной прогон (У1 + У2 + воркеры)
-- [ ] У2: приём фактов, движок проверок, типы правил `numeric_*`, `threshold_*`, `ordinal_decrease`, `set_difference`
-- [ ] У2: первые `rules/*.yaml` (согласованы с участником 5)
-- [ ] У1: метрики, дашборды Grafana, алерты, логи в ELK/Loki
-- **DoD:** загрузка тестового объекта ОВ → воркеры → в протоколе CANDIDATE по помещениям 140/142 с bbox обеих сторон
+- [x] У2: приём фактов (`engine.ProcessFacts`, валидация: quote, bbox в [0;1], x0<x1), движок проверок —
+      8 типов: `numeric_equal`, `numeric_delta_pct`, `numeric_decrease`, `numeric_increase`,
+      `threshold_min/max`, `ordinal_decrease` (шкалы `rules/scales.yaml`), `text_mismatch`;
+      `set_difference`, `presence`, `tolerance` — **не реализованы**, дают `NOT_COMPARABLE`
+- [x] У2: каталог `rules/M-XXX.yaml` — **71 из 132** параметров, выведен из колонки «Логика ИИ-связи»
+      Матрицы, **черновик до подтверждения экспертом (TODO(TZ))**; для остальных 61 — честный
+      `NOT_COMPARABLE/RULE_NOT_IMPLEMENTED` (§8.5 п.1)
+- [x] Воркеры (Python, `workers/`): parse (PDF/DOCX/XML → layout с bbox; OCR-хук) и extract (44 regex-шаблона
+      + опциональный LLM с проверкой цитат); 93 теста; контракт на JSON Schema, общие golden-примеры
+      проверяются и на Go, и на Python
+- [ ] У1: метрики движка/дашборды Grafana/алерты/ELK-Loki — не в этом объёме (задел уже есть:
+      `inspector_http_*` метрики с M0, остальные из §10 — TODO)
+- **DoD (адаптирован):** `scripts/e2e.py`: два реальных PDF (ПД и РД с заложенными расхождениями) →
+      настоящие Python-воркеры → 5 `CANDIDATE` (площадь застройки, огнестойкость I→II, бетон B35→B30,
+      толщина плиты, ширина двери 800 мм < 0,9 м) и 6 `NEGATIVE_VERIFIED`, у каждого — цитата, страница и
+      bbox; полный маршрут через настоящую Kafka до `SYNCED`. Сценарий ОВ/помещения 140/142 из исходного
+      DoD относится к реальным данным примера ТЗ — не воспроизводился (нет самих документов; извлечение
+      «по помещениям» — `element_key` — воркерами не поддержано).
 
 ### M4 — 25–26.09 · Протокол и верификация
-- [ ] У2: сборка протокола (5 таблиц), findings, decision, split, finalize/unfinalize, dataset_items
-- [ ] У1: экспорт PDF (gotenberg + миниатюры с bbox), JSON, XML
-- [ ] У1: `cmd/rin-sync` + `cmd/rin-mock`, ретраи, PENDING_SYNC
-- [ ] У1: инкрементальный пересчёт (индекс параметр → источники, input_hash)
-- [ ] У2: suspicions (приём от воркера, promote)
-- **DoD:** полный цикл «загрузка → протокол → 3 решения → финализация → отправка в rin-mock с одной неудачей и ретраем»
+- [x] У2: сборка протокола — **только JSON** (`GET /processes/{id}/protocol`), не 5 отдельных таблиц;
+      `findings`/`decision` реализованы и проверены (включая обязательность `comment`/`reason_code`
+      по backend-plan.md §7); `split` и `dataset_items` — **не реализованы**
+- [x] У2: `finalize`/`unfinalize` (переход в `FINALIZED`, роль supervisor/admin для unfinalize, аудит)
+- [ ] У1: экспорт PDF (gotenberg + миниатюры с bbox), XML — **не реализован**
+- [x] У1: `cmd/rin-sync` + `cmd/rin-mock`, ретраи 1/5/15 мин (конфигурируемо), `PENDING_SYNC` →
+      `SYNCED`/`SYNC_FAILED`; 4xx не ретраится, 5xx/таймаут — ретраится; `rin.Signer` — заглушка
+      (`NoopSigner`, УКЭП не определена в ТЗ)
+- [ ] У1: инкрементальный пересчёт (индекс параметр → источники, `input_hash`) — `input_hash` в
+      `evidence_groups` считается, но не переиспользуется; полноценная инкрементальность — TODO
+- [ ] У2: suspicions — **не реализованы** (нет ни приёма от воркера, ни `promote`)
+- **DoD (адаптирован):** полный цикл «загрузка → протокол → решение по CANDIDATE → финализация →
+      отправка в rin-mock → SYNCED» — **проверено вручную end-to-end на живом стенде** (1 решение,
+      не 3 — в тестовом сценарии был один `CANDIDATE`); сценарий с неудачей и ретраем rin-sync
+      проверен автоматическими тестами (`internal/rin`, не на живом стенде в этом прогоне).
 
 ### M5 — 27.09 · Feature freeze
 - [ ] Типы правил `presence`, `tolerance`, `text_mismatch`; расширение набора `rules/*.yaml`
